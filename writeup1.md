@@ -745,6 +745,8 @@ NO SPACE IN THE PASSWORD (password is case sensitive).
 ```
 ### **Pistas del README:**
 
+Cuando tengas todas las contraseñas, úsalas como usuario `thor` con `ssh`.
+
 Las letras y números del README son pistas parciales que se confirman tras
 analizar cada etapa del binario con GDB:
 
@@ -753,7 +755,6 @@ analizar cada etapa del binario con GDB:
 - `b`  → la etapa 3 tiene una solución que contiene la letra `b`
 - `o`  → la etapa 5 tiene una solución que contiene la letra `o`
 - `4`  → la etapa 4 acepta un número relacionado con el `4`
-
 
 **Recordatorio:**
 
