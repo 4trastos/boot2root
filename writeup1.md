@@ -926,7 +926,7 @@ Coincide con la pista 2 del README.
 ```asm
 0x08048bd6 <+62>:	jmp    DWORD PTR [eax*4+0x80497e8]
 ```
-- Busca qué hay en la tabla de saltos en la dirección `0x80497e8`:
+- Buscamos qué hay en la tabla de saltos en la dirección `0x80497e8`:
 ```
 (gdb) x/8wx 0x80497e8
 0x80497e8:	0x08048be0	0x08048c00	0x08048c16	0x08048c28
@@ -1404,8 +1404,8 @@ process 4317
 Mapped address spaces:
 
 	Start Addr   End Addr       Size     Offset objfile
-	 0x8048000  0x8049000     0x1000        0x0 /home/zaz/exploit_me
-	 0x8049000  0x804a000     0x1000        0x0 /home/zaz/exploit_me
+	0x8048000  0x8049000     0x1000        0x0 /home/zaz/exploit_me
+	0x8049000  0x804a000     0x1000        0x0 /home/zaz/exploit_me
 	0xb7e2b000 0xb7e2c000     0x1000        0x0 
 	0xb7e2c000 0xb7fcf000   0x1a3000        0x0 /lib/i386-linux-gnu/libc-2.15.so
 	0xb7fcf000 0xb7fd1000     0x2000   0x1a3000 /lib/i386-linux-gnu/libc-2.15.so
