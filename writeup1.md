@@ -1479,7 +1479,7 @@ ft_root:x:1000:1000:ft_root,,,:/home/ft_root:/bin/bash
 
 ## 16. Conclusión del Writeup 1
 
-El writeup 1 sigue una cadena de explotación en 14 pasos que va desde el
+El writeup 1 sigue una cadena de explotación en 15 pasos que va desde el
 descubrimiento de la IP hasta la obtención de root:
 
 ```
