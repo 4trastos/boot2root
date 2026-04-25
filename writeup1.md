@@ -860,7 +860,7 @@ End of assembler dump.
 type = int ()
 ```
 ### **Líneas 0 - 78:**
-
+```text
 1.  <+0>: Guarda en lo alto del stack el valor de `EBP` (cpu) `[esp + 0x00]`. El `ESP` se desplaza 4 bytes hacia abajo.
 2.  <+1>: Asigna el nuevo `ESP` a `EBP` para la función `phase_2`.
 3.  <+3>: Reserva (desplaza) `32 bytes` (0x20) en el stack de `phase_2()`.
@@ -892,6 +892,7 @@ type = int ()
 29. <+75>: Restaura `ESP` desde `EBP`.
 30. <+77>: Restaura `EBP`.
 31. <+78>: `ret` — retorna el control al caller.
+```
 
 El bucle verifica que cada número sea el anterior multiplicado por (i+1):
 ```bash
