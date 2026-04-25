@@ -1220,7 +1220,7 @@ El nombre "turtle" hace referencia al módulo `turtle` de Python. Este módulo p
 
 Necesitamos convertir las instrucciones dadas a código Python y ejecutarlo.
 
-El archivo `turtle` necesita ejecutarse en nuestro host porque la VM no tiene entorno gráfico. Descarga el archivo primero, creamos el programa en python y lo ejecutamos.
+El archivo `turtle` necesita ejecutarse en nuestro host porque la VM no tiene entorno gráfico. Descargamos el archivo primero, creamos el programa en python y lo ejecutamos.
 
 En nuestro host:
 ```bash
