@@ -3,6 +3,7 @@
 ## Índice:
 
 - [1. Encontrar la IP](#1-encontrar-la-ip)
+- [1.1 Encontrar la IP en el campus](#11-encontrar-la-ip-en-el-campus)
 - [2. Reconocimiento de servicios](#2-reconocimiento-de-servicios)
 - [3. Explorar el servidor web](#3-explorar-el-servidor-web)
 - [4. Fuzzing paths de acceso](#4-fuzzing-paths-de-acceso)
@@ -74,7 +75,7 @@ Nuetra IP:      192.168.0.19
 Rango:          192.168.0.0/24 
 ```
 
-La VM está en el mismo rango. Puesto que el campus no disponemos de `nmap`,  usamos una función en bash para escanear las IP:
+La VM está en el mismo rango. Puesto que com es posibel que no dispongamos de `nmap`,  usamos una función en bash para escanear las IP:
 ```bash
  for i in {1..254}; do 
   (ping -c 1 -W 1 192.168.0.$i | grep "from" | cut -d " " -f 4 | tr -d ":" &) 
@@ -112,6 +113,34 @@ done
 [+] Puerto 80 abierto
 [+] Puerto 443 abierto
 ```
+
+## 1.1 Encontrar la IP en el campus
+
+La red del campus es `10.12.0.0/16`. Obtenemos primero la MAC de la VM:
+
+```bash
+VBoxManage showvminfo "boot2root" | grep -i "mac"
+NIC 1: MAC: 0800278C3C22, Attachment: Bridged Interface 'enp4s0f0'
+```
+
+La MAC `0800278C3C22` se formatea con dos puntos: `08:00:27:8c:3c:22`.
+
+Las VMs de boot2root en 42 Madrid siempre están en el rango `10.12.200.x`.
+Escaneamos ese rango buscando la VM por su MAC en la tabla ARP:
+
+```bash
+for i in {1..254}; do
+  bash -c "echo > /dev/tcp/10.12.200.$i/22" 2>/dev/null
+  result=$(arp -n | grep "08:00:27:8c:3c:22")
+  if [ -n "$result" ]; then
+    echo "VM encontrada: $result"
+    break
+  fi
+done
+VM encontrada: 10.12.200.13    ether   08:00:27:8c:3c:22   C   enp4s0f0
+```
+
+La IP de la VM en el campus es `10.12.200.13`.
 
 ## 2. Reconocimiento de servicios
 
