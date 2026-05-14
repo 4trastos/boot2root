@@ -375,7 +375,7 @@ Lo probamos en el navegador `https://192.168.0.30/forum/`, nos muetra la página
 
 ## 5. Explorando el foro
 
-El foro es **"my little forum 2.3.4"**. Extraemos información muy valiosa:
+El foro es **"my little forum 2.3.4"**. Observando la página extraemos información muy valiosa porque los usuarios registrados al pie de página conincide con los nombres en los hilos:
 
 **6 usuarios registrados:**
 
