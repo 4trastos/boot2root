@@ -1,34 +1,34 @@
 # Writeup 4 - FakeRoot.
 
-## Índice:
+## Index:
 
-- [¿En qué consiste este método?](#en-qué-consiste-este-método)
-- [1. Acceso SSH como laurie](#1-acceso-ssh-como-laurie)
-- [2. Ejecutamos fakeroot](#2-ejecutamos-fakeroot)
+- [What does this method consist of?](#what-does-this-method-consist-of)
+- [1. SSH access as laurie](#1-ssh-access-as-laurie)
+- [2. We run fakeroot](#2-we-run-fakeroot)
 
-## ¿En qué consiste este método?
+## What does this method consist of?
 
-`fakeroot` es una herramienta estándar instalada en muchos sistemas Ubuntu que simula un entorno de root para el usuario actual. 
+`fakeroot` is a standard tool installed on many Ubuntu systems that simulates a root environment for the current user.
 
-Una vez que tenemos acceso SSH como cualquier usuario del sistema, en este caso `laurie`, comprobamos si está disponible y lo ejecutamos directamente.
+Once we have SSH access as any other user on the system, in this case `laurie`, we check if it's available and run it directly.
 
-Lo que hace es engañar a los programas que preguntan por el uid haciéndoles creer que somos root, pero el kernel sigue sabiendo que somos `laurie`.
+What it does is trick programs that request the user ID (uid) into thinking we are root, but the kernel still knows we are `laurie`.
 
-Es útil para empaquetar software (como hace Debian) pero no es una escalada de privilegios real. No podemos leer `/etc/shadow`, no podemos matar procesos de `root`, no podemos escribir en `/root`.
+It's useful for bundling software (as Debian does) but it's not a true privilege escalation. We can't read `/etc/shadow`, we can't kill processes running as `root`, and we can't write to `/root`.
 
-Aunque no otorga privilegios reales de root, el subject solo exige que `whoami` devuelva `root` y que `id` muestre `uid=0`; condiciones que `fakeroot` cumple perfectamente.
+Although it doesn't grant real root privileges, the `subject` only requires that `whoami` returns `root` and that `id` shows `uid=0`; conditions that `fakeroot` perfectly fulfills.
 
-Es el método más simple de todos los writeups: un único comando.
+It's the simplest of all write-up methods: a single command.
 
-## Explotación
+## Exploitation
 
-### 1. Acceso SSH como laurie
+### 1. SSH access as laurie
 
-Nos conectamos por ssh con el usuario `laurie`:
-- Usuario: laurie
+We connect via ssh with the user `laurie`:
+- User: laurie
 - Password: 330b845f32185747e4f8ca15d40ca59796035c89ea809fb5d30f4da83ecf45a4
 
-Y ejecutamos `fakeroot`:
+And we run `fakeroot`:
 ```bash
 ssh laurie@192.168.0.35
         ____                _______    _____           
@@ -43,7 +43,7 @@ laurie@192.168.0.35's password:
 laurie@BornToSecHackMe:~$ 
 ```
 
-### 2. Ejecutamos fakeroot
+### 2. We run fakeroot
 
 ```bash
 laurie@BornToSecHackMe:~$ fakeroot
@@ -54,4 +54,4 @@ uid=0(root) gid=0(root) groups=0(root),1003(laurie)
 root@BornToSecHackMe:~# 
 ```
 
-## **ROOT conseguido con fakeroot. uid=0.**
+## **ROOT obtained with fakeroot. uid=0.**

